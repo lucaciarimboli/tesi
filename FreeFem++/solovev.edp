@@ -1,0 +1,58 @@
+// Parameters:
+real R0 = 5/3;         // major radius
+real a = 0.5;          // minor radius
+real lambda = 0.;    // triangularity
+
+real eps = a / R0; // aspect ratio
+real b = 1. - eps;  // elongation
+
+// Compute r.h.s. of Grad-Shafranov equation:
+real alpha = ( 4*(a^2+b^2)*eps + a^2 * (2*lambda - eps^3) ) / ( 2*R0 * eps * a^2 * b^2); // alpha = p'
+real beta = - lambda / (eps * b^2); // beta = FF'
+func f = alpha*(R0*(1+eps*x))^2 + beta; // r.h.s --> Solov'ev equilibrium
+
+// Generate Mesh:
+int n = 128; // number of points in the boundary
+border Gamma1(t=-1,1){  
+    x = t;  
+    y = b/a * sqrt((1 - (t - eps/2 * (1 - t^2))^2) / ((1 - eps^2 / 4) * (1 + eps*t)^2 + lambda * t * (1 + eps/2 * t)));  
+}  
+border Gamma2(t=1,-1){  
+    x = t;  
+    y = -b/a * sqrt((1 - (t - eps/2 * (1 - t^2))^2) / ((1 - eps^2 / 4) * (1 + eps*t)^2 + lambda * t * (1 + eps/2 * t)));  
+}  
+mesh Th = buildmesh(Gamma1(-n/2) + Gamma2(-n/2)); // D-shaped domain
+plot(Th, wait=true, ps="mesh.eps");
+
+// Finite Element Space:
+fespace Vh(Th, P1);           // P1 elements space
+Vh psi, phi, error, psiExact; // flux, test function, error, exact flux
+
+// Exact solution:
+func exact = 1. - (x - eps/2 * (1-x^2))^2 - ((1-eps^2/4)*(1+eps*x)^2 + lambda*x*(1+eps/2*x))*(a/b*y)^2;
+psiExact = exact;
+plot(psiExact, wait=true, fill=true, value=true, ps="exact.eps");
+
+// Numerical FEM solution:
+real L2error;     // Error in L2 norm
+func g = 0.;      // Homogeneous Dirichlet BC
+
+// Variational formulation:
+varf GradShafranov(psi, phi, solver=LU) =
+      int2d(Th)((dx(psi)*dx(phi) + dy(psi)*dy(phi))/(1 + eps*x) )
+    + int2d(Th)(a^2 /(1 + eps*x) * f*phi)
+    + on(Gamma1,Gamma2, psi = g)
+    ;
+
+// Assembly linear problem:
+matrix<real> A = GradShafranov(Vh, Vh); // Stiffness matrix
+real[int] L = GradShafranov(0, Vh);  // Load vector
+
+// Solve linear problem:
+psi[] = A^-1*L;
+plot(psi, wait=true, fill=true, ps="flux.eps");
+
+// Compute error:
+error = abs(psi - psiExact);
+L2error = sqrt(int2d(Th)(square(error)))/sqrt(int2d(Th)(square(psiExact)));
+cout << "L2 error: " << L2error << endl;
