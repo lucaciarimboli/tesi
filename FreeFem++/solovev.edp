@@ -1,7 +1,7 @@
 // Parameters:
 real R0 = 5/3;         // major radius
 real a = 0.5;          // minor radius
-real lambda = 0.;    // triangularity
+real lambda = -0.3;      // triangularity
 
 real eps = a / R0; // aspect ratio
 real b = 1. - eps;  // elongation
@@ -12,7 +12,7 @@ real beta = - lambda / (eps * b^2); // beta = FF'
 func f = alpha*(R0*(1+eps*x))^2 + beta; // r.h.s --> Solov'ev equilibrium
 
 // Generate Mesh:
-int n = 128; // number of points in the boundary
+int n = 64; // number of points in the boundary
 border Gamma1(t=-1,1){  
     x = t;  
     y = b/a * sqrt((1 - (t - eps/2 * (1 - t^2))^2) / ((1 - eps^2 / 4) * (1 + eps*t)^2 + lambda * t * (1 + eps/2 * t)));  
