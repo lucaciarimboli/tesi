@@ -29,5 +29,8 @@ Physical Line("Boundary") = {5};
 
 // Create a plane surface
 Plane Surface(6) = {5};
-Recombine Surface {6};
 Physical Surface("Omega") = {6};
+
+Mesh.Algorithm = 1;
+//Mesh.Smoothing = 100;
+
