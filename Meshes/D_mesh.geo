@@ -32,5 +32,6 @@ Plane Surface(6) = {5};
 Physical Surface("Omega") = {6};
 
 Mesh.Algorithm = 1;
+Mesh.CharacteristicLengthMax = 0.1;
 Mesh.Smoothing = 10;
 

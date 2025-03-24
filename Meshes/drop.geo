@@ -20,4 +20,5 @@ Plane Surface(4) = {3};
 Physical Surface("Omega") = {4};   // Assign domain
 
 Mesh.Algorithm = 1;
+Mesh.CharacteristicLengthMax = 0.1;
 Mesh.Smoothing = 10;
