@@ -17,19 +17,22 @@ For i In {0:n-1}
 	0}; // Lower boundary
 EndFor
 
+Point(2*n+1) = {1,0,0};
+
 // Connect points into curves
 Spline(1) = {1:n}; // Upper part
 Spline(2) = {n+1:2*n}; // Lower part
 
 // Close the loop
 Line(3) = {n+1,1};
-Line(4) = {n, 2*n};
-Line Loop(5) = {1, 4, -2, 3};
-Physical Curve("Boundary",1) = {5};
+Line(4) = {n, 2*n+1};
+Line(5) = {2*n+1,2*n};
+Line Loop(6) = {1, 4, 5, -2, 3};
+Physical Curve("Boundary",1) = {1,2,3,4,5};
 
 // Create a plane surface
-Plane Surface(6) = {5};
-Physical Surface("Omega",2) = {6};
+Plane Surface(7) = {6};
+Physical Surface("Omega",2) = {7};
 
 Mesh.Algorithm = 1;
 Mesh.CharacteristicLengthMax = 0.1;
