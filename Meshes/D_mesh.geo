@@ -25,7 +25,7 @@ Spline(2) = {n+1:2*n}; // Lower part
 Line(3) = {n+1,1};
 Line(4) = {n, 2*n};
 Line Loop(5) = {1, 4, -2, 3};
-Physical Curve("Boundary",1) = {1,4,-2,3};
+Physical Curve("Boundary",1) = {5};
 
 // Create a plane surface
 Plane Surface(6) = {5};
