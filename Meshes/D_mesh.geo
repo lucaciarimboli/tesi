@@ -7,25 +7,25 @@ b = 1 - eps;     // elongation
 
 n = 128;		// number of discretization points
 
-For i In {0:n}
+For i In {0:n-1}
   x = -1 + 2*i/n; // Linearly spaced t values from -1 to 1 
   Point(i+1) = {x,
 	b/a * Sqrt( (1 - (x - eps/2 * (1 - x^2))^2) / ((1 - eps^2 / 4) * (1 + eps*x)^2 + tau*x * (1 + eps/2 * x)) ),
 	0}; // Upper boundary
-  Point(n+i+2) = {x,
+  Point(n+i+1) = {x,
 	-b/a * Sqrt( (1 - (x - eps/2 * (1 - x^2))^2) / ((1 - eps^2 / 4) * (1 + eps*x)^2 + tau*x * (1 + eps/2 * x)) ),
 	0}; // Lower boundary
 EndFor
 
 // Connect points into curves
-Spline(1) = {1:n+1}; // Upper part
-Spline(2) = {n+2:2*n+2}; // Lower part
+Spline(1) = {1:n}; // Upper part
+Spline(2) = {n+1:2*n}; // Lower part
 
 // Close the loop
-Line(3) = {n+2,1};
-Line(4) = {n+1, 2*n+2};
+Line(3) = {n+1,1};
+Line(4) = {n, 2*n};
 Line Loop(5) = {1, 4, -2, 3};
-Physical Curve("Boundary",1) = {5};
+Physical Curve("Boundary",1) = {1,4,-2,3};
 
 // Create a plane surface
 Plane Surface(6) = {5};
