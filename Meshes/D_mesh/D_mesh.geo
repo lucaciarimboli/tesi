@@ -33,7 +33,19 @@ Physical Curve("Boundary",1) = {1,2,3,4};
 Plane Surface(6) = {5};
 Physical Surface("Omega",2) = {6};
 
-Mesh.Algorithm = 1;
-Mesh.CharacteristicLengthMax = 0.1;
-Mesh.Smoothing = 10;
+// Characteristic lengths for refinement:
+h_values[] = {0.1, 0.05, 0.02, 0.01};
+
+For i In {0:#h_values[]-1}
+
+        Mesh.Algorithm = 1;
+        Mesh.CharacteristicLengthMax = h_values[i];
+        Mesh.Smoothing = 10;
+
+        // Generate Mesh:
+        Mesh 2;
+
+        // Save mesh:
+        Save StrCat("D_mesh_", Sprintf("%g", i+1), ".msh");
+EndFor
 
