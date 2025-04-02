@@ -34,7 +34,7 @@ Plane Surface(6) = {5};
 Physical Surface("Omega",2) = {6};
 
 // Characteristic lengths for refinement:
-h_values[] = {0.1, 0.05, 0.02, 0.01};
+h_values[] = {0.8, 0.5, 0.3, 0.1};
 
 For i In {0:#h_values[]-1}
 
