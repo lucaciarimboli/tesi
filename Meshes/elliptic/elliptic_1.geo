@@ -1,4 +1,4 @@
-n = 128;  // Number of discretization points
+n = 16;  // Number of discretization points
 
 // Define R limits
 R_min = 2/3 * Sqrt(3*Pi);
@@ -38,8 +38,16 @@ Physical Curve("Boundary",1) = {1,2,3,4};
 Plane Surface(6) = {5};
 Physical Surface("Omega",2) = {6};
 
+// Characteristic lengths for refinement:
+h = 5 / n;
+
 // Mesh settings
 Mesh.Algorithm = 1;
-Mesh.CharacteristicLengthMax = 0.1;
+Mesh.CharacteristicLengthMax = h;
 Mesh.Smoothing = 10;
 
+// Generate Mesh:
+Mesh 2;
+
+// Save mesh:
+Save StrCat("elliptic_1.msh");
