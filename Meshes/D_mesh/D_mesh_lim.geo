@@ -18,7 +18,7 @@ For i In {0:n-1}
   
 	x = x + 2/n;		// Allows to define once the points {-1,0,0} and {1,0,0}
 	Point(n+i+1) = {x,
-		-b/a * Sqrt( (1 - (x - eps/2 * (1 - x^2))^2) / ((1 - eps^2 / 4) * (1 + eps*x)^2 + tau*x * (1 + eps/2 * x)) ),
+		-b/a * Sqrt( (1 - (x - eps/2 * (1 - x^2))^2) / ((1 - eps^2 / 4)*(1 + eps*x)^2 + tau*x * (1 + eps/2 * x)) ),
 		0}; // Lower boundary
 EndFor
 
