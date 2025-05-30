@@ -28,7 +28,7 @@ class GradShafranovSolver:
         # Identify the different regions in the mesh:
         self.plasma_mask = initialize_plasma_mask(self.params["vessel"], self.V, self.x, self.y)
         self.vessel_mask = define_vessel_mask(self.params["vessel"], self.params["j_cv"], self.V, self.x, self.y)
-        self.coils_mask = define_coils_mask(self.params["I"], self.params["coils"], self.V, self.x, self.y)
+        self.coils_mask = define_coils_mask(self.params["I"], self.params["coils_adapted_format"], self.V, self.x, self.y)
 
         self.converged = False
         self.algorithm = "Picard" # Default algorithm for solving the Grad-Shafranov equation
@@ -70,7 +70,7 @@ class GradShafranovSolver:
             self.vessel_mask.assign(Constant(j_cv/self.params["j_cv"]) * self.vessel_mask)    
 
             # Update the currents in the coils_mask:
-            self.coils_mask = define_coils_mask(I, self.params["coils"], self.V, self.x, self.y)
+            self.coils_mask = define_coils_mask(I, self.params["coils_adapted_format"], self.V, self.x, self.y)
 
             # Update the data in self.params:
             self.params["j_cv"] = j_cv
@@ -101,19 +101,21 @@ class GradShafranovSolver:
 
         # Either build the mesh based on the geometry parameters provided
         if( geometry == "build"):
-            path = "./meshes/generated_mesh.msh"
+            path = "./meshes/custom_tokamak.msh"
             
             geometry_params = {
-                "x0": self.params.get("x0", 0.0),
-                "y0": self.params.get("y0", 0.0),
-                "R": self.params.get("R", 1.0),
-                "thickness": self.params.get("thickness", 0.1),
+                "boundary": self.params.get("boundary", [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]), 
+                "outer_wall": self.params.get("vessel_outer_wall", None),
+                "inner_wall": self.params.get("vessel_inner_wall", None),
                 "coils": self.params.get("coils", []),
-                "domain_size": self.params.get("domain_size", (1.0, 1.0)),
+                "limiter_pts": self.params.get("limiter_pts", None),
+                "limiter_line": self.params.get("limiter_line", None),
                 "mesh_size_min": self.params.get("mesh_size_min", 0.01),
                 "mesh_size_max": self.params.get("mesh_size_max", 0.05),
-                "vacuum_mesh_size": self.params.get("vacuum_mesh_size", 0.02),
-                "limiter_pts": self.params.get("limiter_pts", None),
+                "limiter_mesh_size": self.params.get("limiter_mesh_size", 0.02),
+                "limiter_dist_max": self.params.get("dist_from_limiter", 0.0),
+                "coils_mesh_size": self.params.get("coils_mesh_size", self.params.get("mesh_size_min")),
+                "coils_dist_max": self.params.get("dist_from_coils", 0.0),
             }
 
             # Generate the mesh using the geometry parameters
@@ -232,19 +234,19 @@ class GradShafranovSolver:
 
         fig, ax = plt.subplots()
         triplot(self.Mesh, axes=ax)
-        plt.scatter(*zip(*self.limiter), color='blue', label='Limiter Points')
+        #plt.scatter(*zip(*self.limiter), color='blue', label='Limiter Points')
 
-        if( self.params.get("geometry", "build") == "build" ):
+        #if( self.params.get("geometry", "build") == "build" ):
             # Plot coils 
-            for coil in self.params["coils"]:
-                x_min, x_max, y_min, y_max = coil
-                plt.plot([x_min, x_max, x_max, x_min, x_min], [y_min, y_min, y_max, y_max, y_min], color='red', label='Coil Edges')
+        #    for coil in self.params["coils_adapted_format"]:
+        #        x_min, x_max, y_min, y_max = coil
+        #        plt.plot([x_min, x_max, x_max, x_min, x_min], [y_min, y_min, y_max, y_max, y_min], color='red', label='Coil Edges')
             # Plot vessel
-            Vessel = self.params["vessel"]
-            inner_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2], color='yellow', fill=False, label='Vessel')
-            outer_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2] + Vessel[3], color='yellow', fill=False, linestyle='dashed')
-            ax.add_artist(inner_wall)
-            ax.add_artist(outer_wall)
+        #    Vessel = self.params["vessel"]
+        #    inner_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2], color='yellow', fill=False, label='Vessel')
+        #    outer_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2] + Vessel[3], color='yellow', fill=False, linestyle='dashed')
+        #    ax.add_artist(inner_wall)
+        #    ax.add_artist(outer_wall)
 
         plt.title(r"Domain")
         plt.xlabel("x")
@@ -266,7 +268,7 @@ class GradShafranovSolver:
         # Include domain structures:
         if( self.params.get("geometry", "build") == "build" ):
             # Plot coils 
-            for coil in self.params["coils"]:
+            for coil in self.params["coils_adapted_format"]:
                 x_min, x_max, y_min, y_max = coil
                 plt.plot([x_min, x_max, x_max, x_min, x_min], [y_min, y_min, y_max, y_max, y_min], color='black', label='Coil Edges')
             # Plot vessel
