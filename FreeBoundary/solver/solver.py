@@ -1,5 +1,5 @@
 from firedrake import *
-from firedrake.pyplot import triplot, tricontourf
+from firedrake.pyplot import triplot, tricontour, tricontourf
 from .functions.geometry import generate_mesh
 from .functions.regions import initialize_plasma_mask, define_vessel_mask, define_coils_mask, update_plasma_mask
 from .functions.varf import GS_varf_Picard
@@ -26,23 +26,25 @@ class GradShafranovSolver:
         self.BCs = [DirichletBC(self.V, 0.0, 'on_boundary')]
 
         # Identify the different regions in the mesh:
-        self.plasma_mask = initialize_plasma_mask(self.params["vessel"], self.V, self.x, self.y)
-        self.vessel_mask = define_vessel_mask(self.params["vessel"], self.params["j_cv"], self.V, self.x, self.y)
-        self.coils_mask = define_coils_mask(self.params["I"], self.params["coils_adapted_format"], self.V, self.x, self.y)
+        self.plasma_mask = initialize_plasma_mask(params["vessel"], self.V, self.x, self.y)
+        self.vessel_mask = define_vessel_mask(params["vessel"], params["j_cv"], self.V, self.x, self.y)
+        self.coils_mask = define_coils_mask(params["I"], params["coils_adapted_format"], self.V, self.x, self.y)
 
         self.converged = False
-        self.algorithm = "Picard" # Default algorithm for solving the Grad-Shafranov equation
+        self.set_algorithm(params.get("algorithm", "Picard"))  # Default algorithm is Picard
 
     # SETTERS:
     def set_algorithm(self, algorithm):
         """
         Set the algorithm for solving the Grad-Shafranov equation.
-        
-        :param algorithm: The algorithm to use (e.g., "Picard", "Newton").
+
+        :param algorithm: The algorithm to use (e.g., "Picard", "Marder-Weitzner").
         """
-        if algorithm not in ["Picard"]:
-            raise ValueError("Invalid algorithm. Choose 'Picard' or 'Newton'.")
-        self.algorithm = algorithm
+        if algorithm not in ["Picard", "Marder-Weitzner"]:
+            self.algorithm = "Picard"  # Default to Picard if invalid algorithm is provided
+            print(f"Invalid algorithm '{algorithm}' provided. Defaulting to 'Picard'.")
+        else:
+            self.algorithm = algorithm
 
     def set_iterations_params(self, max_iterations, tolerance, verbose=False):
         """
@@ -75,6 +77,7 @@ class GradShafranovSolver:
             # Update the data in self.params:
             self.params["j_cv"] = j_cv
             self.params["I"] = I
+
 
     def set_initial_guess(self, initial_guess):
         """
@@ -120,7 +123,7 @@ class GradShafranovSolver:
 
             # Generate the mesh using the geometry parameters
             generate_mesh(geometry_params, path)
-            self.Mesh = Mesh(path)
+            self.Mesh = Mesh(path, distribution_parameters={"partition": False})
             self.limiter = geometry_params["limiter_pts"]
 
         # Or load a pre-defined mesh from a file
@@ -129,7 +132,7 @@ class GradShafranovSolver:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Mesh file {path} does not exist.")
             else: 
-                self.Mesh = Mesh(path)
+                self.Mesh = Mesh(path, distribution_parameters={"partition": False})
 
             # Set the limiter points for the plasma boundary:
             self.limiter = DirichletBC(V, 0.0, 'limiter').nodes          # case limiter is a closed line
@@ -154,21 +157,6 @@ class GradShafranovSolver:
         self.psi = Function(self.V)       # Trial flux function
 
 
-    def assemble_system(self, phi, psi_old):
-        """
-        Assemble the system of equations for the Grad-Shafranov problem.
-        This method should be implemented to set up the variational problem.
-        """
-
-        if self.algorithm == "Picard":
-            a = GS_varf_Picard(self.x, self.y, self.params["G"], self.phi, self.psi, psi_old, 
-                                    self.plasma_mask, self.vessel_mask, self.coils_mask)
-            
-        else:
-            NotImplementedError("Method not implemented. Please choose a valid method.")
-
-        return a
-
     # SOLVER METHOD:
     def solve(self):
         """
@@ -184,8 +172,10 @@ class GradShafranovSolver:
         else:
             psi_old.interpolate(Constant(0.0))
 
-        # Assemble the system
-        a = self.assemble_system(self.phi, psi_old)
+        # Define intermidiate solutions for multi-step methods if needed:
+        if self.algorithm == "Marder-Weitzner":
+            psi_step = Function(self.V)
+            alpha = self.params.get("alpha", 0.5)  # Default alpha value for Marder-Weitzner method
 
         # Set up the solver parameters
         maxit = self.params.get("max_iterations", 100)
@@ -197,8 +187,25 @@ class GradShafranovSolver:
         outfile = VTKFile("./results/flux.pvd")
 
         while not self.converged and it < maxit:
+
             # Solve the variational problem
-            solve(a == 0, self.psi, bcs = self.BCs)
+
+            if self.algorithm == "Picard":
+                a = GS_varf_Picard(self.x, self.params["G"], self.phi, self.psi, psi_old, 
+                                    self.plasma_mask, self.vessel_mask, self.coils_mask)
+                solve(a == 0, self.psi, bcs = self.BCs)
+
+            elif self.algorithm == "Marder-Weitzner":
+                a = GS_varf_Picard(self.x, self.params["G"], self.phi, psi_step, psi_old,
+                                    self.plasma_mask, self.vessel_mask, self.coils_mask)
+                solve(a == 0, psi_step, bcs = self.BCs)
+                a = GS_varf_Picard(self.x, self.params["G"], self.phi, self.psi, psi_step,
+                                    self.plasma_mask, self.vessel_mask, self.coils_mask)
+                solve(a == 0, self.psi, bcs = self.BCs)
+                self.psi.assign( (1-alpha) * psi_old + 2*alpha *psi_step - alpha * self.psi )
+
+            else:
+                raise ValueError(f"Unknown algorithm '{self.algorithm}'. Supported algorithms are 'Picard' and 'Marder-Weitzner'.")
 
             # Compute error:
             self.err = errornorm(self.psi, psi_old, 'H1') / norm(psi_old, 'H1')
@@ -225,7 +232,7 @@ class GradShafranovSolver:
         else:
             print(f"Solver converged in {it} iterations. Final H1 Error = {self.err:.6e}")
 
-# PLOT METHODS:
+    # PLOT METHODS:
     def display_mesh(self):
         """
         Display the mesh of the Grad-Shafranov problem.
@@ -262,8 +269,11 @@ class GradShafranovSolver:
         """
 
         fig, ax = plt.subplots()
-        #fig.colorbar(tripcolor(self.psi, axes=ax))
-        tricontourf(self.psi, levels=20, axes=ax)
+        tricontourf(self.psi, levels=50, cmap='viridis', axes=ax, figure=fig)
+        tricontour(self.psi, levels=[self.psi0], colors='red', linewidths=2, figure=fig, axes=ax)
+        #triplot(self.Mesh, axes=ax)
+        # Plot the plasma boundary:
+        #plt.contour(self.x, self.y, self.psi, levels=[self.psi0], colors='red')
         plt.scatter(*zip(*self.limiter), color='blue', label='Limiter Points')
         # Include domain structures:
         if( self.params.get("geometry", "build") == "build" ):
@@ -273,8 +283,8 @@ class GradShafranovSolver:
                 plt.plot([x_min, x_max, x_max, x_min, x_min], [y_min, y_min, y_max, y_max, y_min], color='black', label='Coil Edges')
             # Plot vessel
             Vessel = self.params["vessel"]
-            inner_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2], color='red', fill=False, label='Vessel')
-            outer_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2] + Vessel[3], color='red', fill=False, linestyle='dashed')
+            inner_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2], color='black', fill=False, label='Vessel')
+            outer_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2] + Vessel[3], color='black', fill=False, linestyle='dashed')
             ax.add_artist(inner_wall)
             ax.add_artist(outer_wall)
         plt.title(r"Solution $\psi$. In red the plasma boundary")
