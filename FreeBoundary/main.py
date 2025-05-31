@@ -71,13 +71,15 @@ params = {
     "j_cv": 3.0,                # Vessel wall current density
     "function_space_family": "P",
     "function_space_degree": 2,
-    "max_iterations": 100,
-    "tolerance": 1e-5,
+    "max_iterations": 1000,
+    "tolerance": 1e-10,
     "verbose": True,
     # G function as a lambda (x, psi) -> x**2 + psi
     "G": lambda x, psi: x**2 + psi,
     # Initial guess (can be a Constant or a Firedrake Function)
     "initial_guess": Constant(0.0),
+    "algorithm": "Marder-Weitzner",
+    "alpha": 0.3,
 }
 
 
@@ -85,8 +87,45 @@ params = {
 #        EXECUTE SOLVER AND PLOT RESULTS           #
 #--------------------------------------------------#
 
+#if __name__ == "__main__":
+#    solver = GradShafranovSolver(params)
+#    solver.display_mesh()
+#    solver.solve()
+#    solver.plot_flux()
+
+#--------------------------------------------------#
+#            TO SHOW GRID INDEPENDENCE             #
+#--------------------------------------------------#
+
 if __name__ == "__main__":
-    solver = GradShafranovSolver(params)
-    solver.display_mesh()
-    solver.solve()
-    solver.plot_flux()
+
+    psi_max = []
+    psi0 = []
+
+    for i in range(6):
+        params["mesh_size_min"] = 0.01 / (2 ** i)
+        params["mesh_size_max"] = 0.05 / (2 ** i)
+        params["limiter_mesh_size"] = 0.1 / (2 ** i)
+        params["dist_from_limiter"] = 0.1 / (2 ** i)
+
+        print(f"Running solver with mesh size factor: {2**i}")
+        solver = GradShafranovSolver(params)
+        solver.display_mesh()
+        solver.solve()
+        solver.plot_flux()
+
+        psi_max.append(solver.psi.vector().max())
+        psi0.append(solver.psi0)
+    
+    import matplotlib.pyplot as plt
+
+    refinement_levels = list(range(6))
+    plt.figure()
+    plt.plot(refinement_levels, psi_max, marker='o', label='psi_max')
+    plt.plot(refinement_levels, psi0, marker='s', label='psi0')
+    plt.xlabel('Refinement level (i)')
+    plt.ylabel('Value')
+    plt.title('Grid Independence Study')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("./results/grid_independence.png")
