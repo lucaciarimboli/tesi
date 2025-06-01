@@ -25,6 +25,8 @@ thick = 0.03
 vessel_outer = circle_points(x0, y0, radius + thick, n=100)
 vessel_inner = circle_points(x0, y0, radius, n=100)
 
+lim_line = circle_points(x0, y0, radius - 2*thick, n=100)
+
 # Two squared coils:
 def rectangle_points(x0, x1, y0, y1):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
@@ -45,41 +47,33 @@ coil2 = rectangle_points(coils_adapted_format[1][0], coils_adapted_format[1][1],
 
 params = {
 
-    #  Da rimuovere dopo aver fixato il problema dei subdomains  #
-    "x0": x0,
-    "y0": y0,
-    "R": radius,
-    "thickness": thick,
-    "vessel": (x0, y0, radius, thick),
-    "coils_adapted_format": coils_adapted_format,
-    # ---------------------------------------------------------- #
-
-    "geometry": "build",
+    "geometry": "custom",
     #"boundary": default,
     "vessel_outer_wall": vessel_outer,
     "vessel_inner_wall": vessel_inner,
     "coils": [coil1, coil2],
-    "limiter_pts": [(0.8, 0.5), (0.6, 0.5)],
-    # "limiter_line": None,
+    "limiter_pts": None,
+    "limiter_line": lim_line,
     "mesh_size_min": 0.005,
     "mesh_size_max": 0.01,
     "limiter_mesh_size": 0.001,
     "dist_from_limiter": 0.1,
-    #"coils_mesh_size": 0.01,
+    "coils_mesh_size": 0.01,
     #"dist_from_coils": 0.1,
-    "I": [0.1, 0.1],        # Coil currents
-    "j_cv": 3.0,                # Vessel wall current density
+    #"I": [-6.705e5, 1.373e4, 2.133e6, 1.432e6, -3.774e5, -6.172e5, -1.885e6, -2.359e6, -2.124e6, -1.836e6, -3.491e6, -2.04e6],        # Coil currents
+    "I": [1e6, 1.0e6],  # Coil currents (for testing, use 1.0 for both coils)
+    "j_cv": 1e7,                # Vessel wall current density
     "function_space_family": "P",
     "function_space_degree": 2,
     "max_iterations": 1000,
-    "tolerance": 1e-10,
+    "tolerance": 1e-5,
     "verbose": True,
     # G function as a lambda (x, psi) -> x**2 + psi
-    "G": lambda x, psi: x**2 + psi,
+    "G": lambda x, psi: x**2 + 1,
     # Initial guess (can be a Constant or a Firedrake Function)
     "initial_guess": Constant(0.0),
     "algorithm": "Marder-Weitzner",
-    "alpha": 0.3,
+    "alpha": 0.4,
 }
 
 
@@ -87,45 +81,45 @@ params = {
 #        EXECUTE SOLVER AND PLOT RESULTS           #
 #--------------------------------------------------#
 
-#if __name__ == "__main__":
-#    solver = GradShafranovSolver(params)
-#    solver.display_mesh()
-#    solver.solve()
-#    solver.plot_flux()
+if __name__ == "__main__":
+    solver = GradShafranovSolver(params)
+    solver.display_mesh()
+    solver.solve()
+    solver.plot_flux()
 
 #--------------------------------------------------#
 #            TO SHOW GRID INDEPENDENCE             #
 #--------------------------------------------------#
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
 
-    psi_max = []
-    psi0 = []
+#    psi_max = []
+#    psi0 = []
 
-    for i in range(6):
-        params["mesh_size_min"] = 0.01 / (2 ** i)
-        params["mesh_size_max"] = 0.05 / (2 ** i)
-        params["limiter_mesh_size"] = 0.1 / (2 ** i)
-        params["dist_from_limiter"] = 0.1 / (2 ** i)
+#    for i in range(6):
+#        params["mesh_size_min"] = 0.01 / (2 ** i)
+#        params["mesh_size_max"] = 0.05 / (2 ** i)
+#        params["limiter_mesh_size"] = 0.1 / (2 ** i)
+#        params["dist_from_limiter"] = 0.1 / (2 ** i)
 
-        print(f"Running solver with mesh size factor: {2**i}")
-        solver = GradShafranovSolver(params)
-        solver.display_mesh()
-        solver.solve()
-        solver.plot_flux()
+#        print(f"Running solver with mesh size factor: {2**i}")
+#        solver = GradShafranovSolver(params)
+#        solver.display_mesh()
+#        solver.solve()
+#        solver.plot_flux()
 
-        psi_max.append(solver.psi.vector().max())
-        psi0.append(solver.psi0)
+#        psi_max.append(solver.psi.vector().max())
+#        psi0.append(solver.psi0)
     
-    import matplotlib.pyplot as plt
+#    import matplotlib.pyplot as plt
 
-    refinement_levels = list(range(6))
-    plt.figure()
-    plt.plot(refinement_levels, psi_max, marker='o', label='psi_max')
-    plt.plot(refinement_levels, psi0, marker='s', label='psi0')
-    plt.xlabel('Refinement level (i)')
-    plt.ylabel('Value')
-    plt.title('Grid Independence Study')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig("./results/grid_independence.png")
+#    refinement_levels = list(range(6))
+#    plt.figure()
+#    plt.plot(refinement_levels, psi_max, marker='o', label='psi_max')
+#    plt.plot(refinement_levels, psi0, marker='s', label='psi0')
+#    plt.xlabel('Refinement level (i)')
+#    plt.ylabel('Value')
+#    plt.title('Grid Independence Study')
+#    plt.legend()
+#    plt.grid(True)
+#    plt.savefig("./results/grid_independence.png")

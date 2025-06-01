@@ -2,20 +2,12 @@
 
 from .solver import GradShafranovSolver
 from .functions.geometry import generate_mesh
-from .functions.regions import (
-    initialize_plasma_mask,
-    define_vessel_mask,
-    define_coils_mask,
-    update_plasma_mask,
-)
-from .functions.varf import GS_varf_Picard
+from .functions.mesh_tags import get_tags
+from .functions.varf import Picard_varf
 
 __all__ = [
     "GradShafranovSolver",
     "generate_mesh",
-    "initialize_plasma_mask",
-    "define_vessel_mask",
-    "define_coils_mask",
-    "update_plasma_mask",
-    "GS_varf_Picard",
+    "get_tags",
+    "Picard_varf",
 ]

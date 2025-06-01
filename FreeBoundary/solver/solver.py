@@ -1,8 +1,8 @@
 from firedrake import *
 from firedrake.pyplot import triplot, tricontour, tricontourf
 from .functions.geometry import generate_mesh
-from .functions.regions import initialize_plasma_mask, define_vessel_mask, define_coils_mask, update_plasma_mask
-from .functions.varf import GS_varf_Picard
+from .functions.mesh_tags import get_tags
+from .functions.varf import Picard_varf
 import os
 import matplotlib.pyplot as plt
 
@@ -22,16 +22,31 @@ class GradShafranovSolver:
         self.build_mesh()
         self.function_spaces()
 
+        # Identify the tags for the mesh:
+        geometry = params.get("geometry", "custom")
+        if geometry == "custom":
+            self.tags = get_tags(geometry, params)
+        else:
+            self.tags = get_tags(geometry)
+
         # Set boundary conditions
-        self.BCs = [DirichletBC(self.V, 0.0, 'on_boundary')]
+        self.BCs = DirichletBC(self.V, 0.0, self.tags['boundary'])
 
-        # Identify the different regions in the mesh:
-        self.plasma_mask = initialize_plasma_mask(params["vessel"], self.V, self.x, self.y)
-        self.vessel_mask = define_vessel_mask(params["vessel"], params["j_cv"], self.V, self.x, self.y)
-        self.coils_mask = define_coils_mask(params["I"], params["coils_adapted_format"], self.V, self.x, self.y)
+        # Extract the nodes that lie on the limiter:
 
+        if self.tags['limiter'] is not None:
+            self.limiter = DirichletBC(self.V, 0.0, self.tags['limiter']).nodes
+
+        if self.tags['limiter_pts'] is not None:
+            if params.get("limiter_pts", None) is not None:
+                self.limiter = params["limiter_pts"]
+        # ------------------------------------------------------------------------------------------------------------------------- #
+        # AGGIUNGERE UN METODO PER "ESTRARRE" I SINGOLI PHYSICAL POINTS USANDO I TAG, SENZA DUNQUE PASSARE LE COORDINATE DIRETTAMENTE
+        # ------------------------------------------------------------------------------------------------------------------------- #
+        
         self.converged = False
         self.set_algorithm(params.get("algorithm", "Picard"))  # Default algorithm is Picard
+
 
     # SETTERS:
     def set_algorithm(self, algorithm):
@@ -68,12 +83,6 @@ class GradShafranovSolver:
         if( len(I) != len(self.params["coils"]) ): 
             raise ValueError("Number of currents does not match number of coils!")
         else:
-            # Update current density in vessel_mask:
-            self.vessel_mask.assign(Constant(j_cv/self.params["j_cv"]) * self.vessel_mask)    
-
-            # Update the currents in the coils_mask:
-            self.coils_mask = define_coils_mask(I, self.params["coils_adapted_format"], self.V, self.x, self.y)
-
             # Update the data in self.params:
             self.params["j_cv"] = j_cv
             self.params["I"] = I
@@ -100,10 +109,10 @@ class GradShafranovSolver:
         The mesh can be either loaded from the provided ones in the folder "meshes",
         or can be generated specifying the geometry parameters. 
         """
-        geometry = self.params.get("geometry", "build")
 
         # Either build the mesh based on the geometry parameters provided
-        if( geometry == "build"):
+        if( self.params.get("geometry", "custom") == "custom" ):
+
             path = "./meshes/custom_tokamak.msh"
             
             geometry_params = {
@@ -124,18 +133,14 @@ class GradShafranovSolver:
             # Generate the mesh using the geometry parameters
             generate_mesh(geometry_params, path)
             self.Mesh = Mesh(path, distribution_parameters={"partition": False})
-            self.limiter = geometry_params["limiter_pts"]
 
         # Or load a pre-defined mesh from a file
         else:
-            path = "./meshes" + geometry + ".msh"
+            path = "./meshes/" + self.params['geometry'] + ".msh"
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Mesh file {path} does not exist.")
             else: 
                 self.Mesh = Mesh(path, distribution_parameters={"partition": False})
-
-            # Set the limiter points for the plasma boundary:
-            self.limiter = DirichletBC(V, 0.0, 'limiter').nodes          # case limiter is a closed line
     
 
     def function_spaces(self, family=None, degree=None):
@@ -153,8 +158,9 @@ class GradShafranovSolver:
         self.x, self.y = SpatialCoordinate(self.Mesh)
 
         # Define test and trial functions:
-        self.phi = TestFunction(self.V)  # Test function
-        self.psi = Function(self.V)       # Trial flux function
+        self.phi = TestFunction(self.V)         # Test function
+        self.psi = Function(self.V)             # Trial flux function
+        self.plasma_mask = Function(self.V)     # Plasma mask function
 
 
     # SOLVER METHOD:
@@ -171,6 +177,10 @@ class GradShafranovSolver:
             psi_old.interpolate(self.params["initial_guess"])
         else:
             psi_old.interpolate(Constant(0.0))
+
+        # Initialize the plasma mask:
+        self.plasma_mask.interpolate(Constant(1.0))
+        epsilon = 0.01  # Smoothing parameter for the plasma mask
 
         # Define intermidiate solutions for multi-step methods if needed:
         if self.algorithm == "Marder-Weitzner":
@@ -191,17 +201,20 @@ class GradShafranovSolver:
             # Solve the variational problem
 
             if self.algorithm == "Picard":
-                a = GS_varf_Picard(self.x, self.params["G"], self.phi, self.psi, psi_old, 
-                                    self.plasma_mask, self.vessel_mask, self.coils_mask)
-                solve(a == 0, self.psi, bcs = self.BCs)
+                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_old,
+                                self.plasma_mask, self.params["j_cv"], self.params["I"],
+                                self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+                solve(a == 0, self.psi, bcs = [self.BCs])
 
             elif self.algorithm == "Marder-Weitzner":
-                a = GS_varf_Picard(self.x, self.params["G"], self.phi, psi_step, psi_old,
-                                    self.plasma_mask, self.vessel_mask, self.coils_mask)
-                solve(a == 0, psi_step, bcs = self.BCs)
-                a = GS_varf_Picard(self.x, self.params["G"], self.phi, self.psi, psi_step,
-                                    self.plasma_mask, self.vessel_mask, self.coils_mask)
-                solve(a == 0, self.psi, bcs = self.BCs)
+                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, psi_step, psi_old,
+                                 self.plasma_mask, self.params["j_cv"], self.params["I"],
+                                 self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+                solve(a == 0, psi_step, bcs = [self.BCs])
+                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_step,
+                                 self.plasma_mask, self.params["j_cv"], self.params["I"],
+                                 self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+                solve(a == 0, self.psi, bcs = [self.BCs])
                 self.psi.assign( (1-alpha) * psi_old + 2*alpha *psi_step - alpha * self.psi )
 
             else:
@@ -212,7 +225,13 @@ class GradShafranovSolver:
             
             # Update psi_old and mask for the next iteration
             psi_old.assign(self.psi)
-            self.psi0 = update_plasma_mask(self.psi, self.limiter, self.plasma_mask)
+            
+            # Update the plasma mask based on the new psi
+            if isinstance(self.limiter[0], tuple):  # List of (x, y) coordinates
+                self.psi0 = max(self.psi.at(pt) for pt in self.limiter)
+            else:  # List/array of node indices
+                self.psi0 = max(self.psi.dat.data[self.limiter])
+            self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi - self.psi0) / (epsilon * self.psi0)))
 
             # Print iteration information
             if(self.params.get("verbose", False)):
@@ -274,19 +293,22 @@ class GradShafranovSolver:
         #triplot(self.Mesh, axes=ax)
         # Plot the plasma boundary:
         #plt.contour(self.x, self.y, self.psi, levels=[self.psi0], colors='red')
-        plt.scatter(*zip(*self.limiter), color='blue', label='Limiter Points')
+        if self.params.get("limiter_pts", None) is not None:
+            # self.limiter is a list of (x, y) coordinates
+            if isinstance(self.limiter, (list, tuple)) and isinstance(self.limiter[0], tuple):
+                plt.scatter(*zip(*self.limiter), color='blue', label='Limiter Points')
+            else:
+                # self.limiter is a list/array of node indices: plot their coordinates
+                coords = self.V.mesh().coordinates.dat.data[self.limiter]
+                plt.scatter(coords[:, 0], coords[:, 1], color='blue', label='Limiter Points')
+        elif self.params.get("limiter", None) is not None:
+            # self.limiter is a list/array of node indices: plot their coordinates
+            coords = self.V.mesh().coordinates.dat.data[self.limiter]
+            plt.plot(coords[:, 0], coords[:, 1], '-', color='blue', label='Limiter')
+
         # Include domain structures:
-        if( self.params.get("geometry", "build") == "build" ):
-            # Plot coils 
-            for coil in self.params["coils_adapted_format"]:
-                x_min, x_max, y_min, y_max = coil
-                plt.plot([x_min, x_max, x_max, x_min, x_min], [y_min, y_min, y_max, y_max, y_min], color='black', label='Coil Edges')
-            # Plot vessel
-            Vessel = self.params["vessel"]
-            inner_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2], color='black', fill=False, label='Vessel')
-            outer_wall = plt.Circle((Vessel[0], Vessel[1]), Vessel[2] + Vessel[3], color='black', fill=False, linestyle='dashed')
-            ax.add_artist(inner_wall)
-            ax.add_artist(outer_wall)
+        # [...]
+
         plt.title(r"Solution $\psi$. In red the plasma boundary")
         plt.xlabel("x")
         plt.ylabel("y")

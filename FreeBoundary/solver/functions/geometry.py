@@ -169,7 +169,11 @@ def generate_mesh(params: dict, msh_path: str):
     #                 DEFINE PHYSICALS                 #
     #--------------------------------------------------#
 
-    # Define physical gsurfaces for air, vessel wall, vacuum:
+    # Define physical line for the boundary:
+    gmsh.model.addPhysicalGroup(1, bdry_lines, tag=0)
+    gmsh.model.setPhysicalName(1, 0, "Boundary")
+
+    # Define physical surfaces for air, vessel wall, vacuum:
     gmsh.model.addPhysicalGroup(2, [air], tag=1)
     gmsh.model.setPhysicalName(2, 1, "Air Region")
     gmsh.model.addPhysicalGroup(2, [vessel_wall], tag=2)
@@ -180,15 +184,14 @@ def generate_mesh(params: dict, msh_path: str):
     # Define physical line/points for the limiter:
     if( params.get("limiter_line", None) is not None ):
         # Embed into vacuum:
-        gmsh.model.mesh.embed(1, [lim_lines], 2, vacuum)
+        gmsh.model.mesh.embed(1, lim_lines, 2, vacuum)
 
         # Define physical line:
-        gmsh.model.addPhysicalGroup(1, [lim_lines], tag=4)
+        gmsh.model.addPhysicalGroup(1, lim_lines, tag=4)
         gmsh.model.setPhysicalName(1, 4, "Limiter")
 
     elif( params.get("limiter_pts", None) is not None ):
-        i = 0
-        for pt in pt_list:
+        for i, pt in enumerate(pt_list):
             # Embed into vacuum:
             gmsh.model.mesh.embed(0, pt, 2, vacuum)
 
@@ -197,11 +200,10 @@ def generate_mesh(params: dict, msh_path: str):
             gmsh.model.setPhysicalName(0, pt_tag, "LimiterPoint_{}".format(i+1))
 
     # Define physical surfaces for the coils:
-    i = 0
-    for coil in coils_list:
-        gmsh.model.addPhysicalGroup(2, [coil], tag = first_coil_tag + i)
-        gmsh.model.setPhysicalName(2, first_coil_tag + i, "Coil_{}".format(i+1))
-        i += 1
+    for i, coil in enumerate(coils_list):
+        tag = first_coil_tag + i
+        gmsh.model.addPhysicalGroup(2, [coil], tag=tag)
+        gmsh.model.setPhysicalName(2, tag, f"Coil_{i+1}")
 
     #--------------------------------------------------#
     #                 MESH REFINEMENT                  #
