@@ -1,6 +1,6 @@
 from firedrake import *
 
-def Picard_varf(mesh, x, G, phi, psi, psi_old, plasma_mask, j_cv, I_coils, vacuum_tag, vessel_tag, coils_tags):
+def Picard_varf(mesh, x, G, phi, psi, psi_N, plasma_mask, j_cv, I_coils, vacuum_tag, vessel_tag, coils_tags):
     """
     Define the bilinear form for the Picard iteration in the context of a magnetohydrodynamic problem.
     Parameters:
@@ -22,11 +22,11 @@ def Picard_varf(mesh, x, G, phi, psi, psi_old, plasma_mask, j_cv, I_coils, vacuu
 
     # Define the bilinear form:
     a  = (dot(grad(psi), grad(phi)) + (1/x) * Dx(psi, 0) * phi) * dx(domain=mesh) \
-        - plasma_mask * G(x,psi_old) * phi * dx(vacuum_tag, domain=mesh) \
+        - plasma_mask * G(x,psi_N) * phi * dx(vacuum_tag, domain=mesh) \
         - j_cv * phi * dx(vessel_tag, domain=mesh)
     
     # Add the contribution from the coils:
     for i in range(len(I_coils)):
         a -= I_coils[i] * phi * dx(coils_tags[i], domain=mesh)  # Coils are indexed from 1 to 12 in the mesh
-    # L = 0
+    
     return a

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 
 class GradShafranovSolver:
 
+    # CONSTRUCTOR:
     def __init__(self, params):
         """
         Constructor for the GradShafranovSolver class.
@@ -87,7 +88,6 @@ class GradShafranovSolver:
             self.params["j_cv"] = j_cv
             self.params["I"] = I
 
-
     def set_initial_guess(self, initial_guess):
         """
         Set the initial guess for the flux function psi.
@@ -113,6 +113,7 @@ class GradShafranovSolver:
         # Either build the mesh based on the geometry parameters provided
         if( self.params.get("geometry", "custom") == "custom" ):
 
+            print("\nBuilding mesh based on custom geometry parameters...")
             path = "./meshes/custom_tokamak.msh"
             
             geometry_params = {
@@ -136,12 +137,12 @@ class GradShafranovSolver:
 
         # Or load a pre-defined mesh from a file
         else:
+            print(f"\nLoading mesh for geometry '{self.params['geometry']}'...")
             path = "./meshes/" + self.params['geometry'] + ".msh"
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Mesh file {path} does not exist.")
             else: 
                 self.Mesh = Mesh(path, distribution_parameters={"partition": False})
-    
 
     def function_spaces(self, family=None, degree=None):
         """
@@ -154,6 +155,7 @@ class GradShafranovSolver:
             family = self.params.get("function_space_family", "CG")
         if degree is None:
             degree = self.params.get("function_space_degree", 1)
+        print(f"Defining function spaces of '{family}{degree}' type...")
         self.V = FunctionSpace(self.Mesh, family, degree)
         self.x, self.y = SpatialCoordinate(self.Mesh)
 
@@ -170,13 +172,17 @@ class GradShafranovSolver:
         
         :return: The solution to the Grad-Shafranov equation.
         """
-        
-        # Set initial guess for psi
-        psi_old = Function(self.V)  
-        if "initial_guess" in self.params:
-            psi_old.interpolate(self.params["initial_guess"])
+        print("Initializing Grad-Shafranov problem...\n")
+        # Poloidal flux old iteration:
+        psi_old = Function(self.V)      # poloidal flux old iteration
+        psi_N = Function(self.V)        # normalized poloidal flux
+        if "initial_guess" in self.params and "norm_initial_guess" in self.params:
+            psi_old.assign(self.params["initial_guess"])
+            psi_N.assign(self.params["norm_initial_guess"])
         else:
-            psi_old.interpolate(Constant(0.0))
+            print("No initial guess provided, using default values.")
+            psi_old.interpolate(Constant(1e-5))  # Not 0 to avoid division by zero in the first iteration
+            psi_N.interpolate(Constant(0.0))
 
         # Initialize the plasma mask:
         self.plasma_mask.interpolate(Constant(1.0))
@@ -193,28 +199,51 @@ class GradShafranovSolver:
         it = 0
         self.converged = False
 
-        # Start file to store the solution
+        # Start .pvd file to store the solution
         outfile = VTKFile("./results/flux.pvd")
 
         while not self.converged and it < maxit:
 
             # Solve the variational problem
-
             if self.algorithm == "Picard":
-                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_old,
+                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N,
                                 self.plasma_mask, self.params["j_cv"], self.params["I"],
                                 self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
                 solve(a == 0, self.psi, bcs = [self.BCs])
 
             elif self.algorithm == "Marder-Weitzner":
-                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, psi_step, psi_old,
+
+                # Compute first-step flux of Marder-Weitzner method:
+                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, psi_step, psi_N,
                                  self.plasma_mask, self.params["j_cv"], self.params["I"],
                                  self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
                 solve(a == 0, psi_step, bcs = [self.BCs])
-                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_step,
+
+                # Update axial and plasma boundary values of flux psi_(1/3):
+                self.psi_max = psi_step.vector().max()
+                if isinstance(self.limiter[0], tuple):
+                    self.psi0 = max(psi_step.at(pt) for pt in self.limiter)
+                else:
+                    self.psi0 = max(psi_step.dat.data[self.limiter])
+                
+                denominator = self.psi_max - self.psi0
+                if denominator < 1e-14: # Avoid division by zero
+                    psi_N.assign(Constant(0.0))
+                else:
+                    psi_N.interpolate(conditional(
+                        (self.psi_max - psi_step) / denominator > 0.99,
+                        Constant(0.99),
+                        (self.psi_max - psi_step) / denominator))
+                    
+                #self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi_step - self.psi0) / (epsilon * self.psi0)))
+
+                # Compute second step flux of Marder-Weitzner method:
+                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N,
                                  self.plasma_mask, self.params["j_cv"], self.params["I"],
                                  self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
                 solve(a == 0, self.psi, bcs = [self.BCs])
+
+                # Update flux using the Marder-Weitzner method with relaxation alpha:
                 self.psi.assign( (1-alpha) * psi_old + 2*alpha *psi_step - alpha * self.psi )
 
             else:
@@ -233,9 +262,23 @@ class GradShafranovSolver:
                 self.psi0 = max(self.psi.dat.data[self.limiter])
             self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi - self.psi0) / (epsilon * self.psi0)))
 
+            # Update the value of psi at the magnetic axis:
+            self.psi_max = self.psi.vector().max()
+
+            # Update the normalized ploidal flux:
+            denominator = self.psi_max - self.psi0
+            # Avoid division by zero if the flux profile is too flat:
+            if denominator < 1e-14: 
+                psi_N.assign(Constant(0.0))
+            else:
+                psi_N.interpolate(conditional(
+                    (self.psi_max - self.psi) / denominator > 0.99,
+                    Constant(0.99),
+                    (self.psi_max - self.psi) / denominator))
+
             # Print iteration information
             if(self.params.get("verbose", False)):
-                print(f"Iteration {it+1}: H1 Error = {self.err:.6e}, psi at boundary = {self.psi0:.6f}, max psi = {self.psi.vector().max():.6f}")
+                print(f"Iteration {it+1}: H1 Error = {self.err:.6e}, psi at boundary = {self.psi0:.6f}, max psi = {self.psi_max:.6f}")
 
             # Write the solution to file
             outfile.write(self.psi)
@@ -251,13 +294,14 @@ class GradShafranovSolver:
         else:
             print(f"Solver converged in {it} iterations. Final H1 Error = {self.err:.6e}")
 
+
     # PLOT METHODS:
     def display_mesh(self):
         """
         Display the mesh of the Grad-Shafranov problem.
-        This method can be implemented to visualize the mesh.
+        This method saves a plot of the mesh in the results directory.
         """
-
+        print("Plotting mesh in file 'results/mesh_plot.png'...")
         fig, ax = plt.subplots()
         triplot(self.Mesh, axes=ax)
         #plt.scatter(*zip(*self.limiter), color='blue', label='Limiter Points')
@@ -284,8 +328,10 @@ class GradShafranovSolver:
     def plot_flux(self):
         """
         Plot the flux function psi.
-        This method can be implemented to visualize the solution.
+        This method saves a contour plot of the flux function in the results directory.
         """
+
+        print("Plotting flux in file 'results/contour_plot.png'...")
 
         fig, ax = plt.subplots()
         tricontourf(self.psi, levels=50, cmap='viridis', axes=ax, figure=fig)

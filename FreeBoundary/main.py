@@ -41,39 +41,53 @@ coil1 = rectangle_points(coils_adapted_format[0][0], coils_adapted_format[0][1],
 coil2 = rectangle_points(coils_adapted_format[1][0], coils_adapted_format[1][1],
                          coils_adapted_format[1][2], coils_adapted_format[1][3])
 
+
+#--------------------------------------------------#
+#                CURRENT PROFILE                   #
+#--------------------------------------------------#
+
+def G(R, psi_norm):
+    r0 = 6.2
+    alpha = 2.0
+    beta = 0.5978
+    gamma = 1.395
+    lambda_ = 1.365461e6
+    return lambda_ * (beta * R / r0 + (1 - beta) * r0 / R) * (1 - psi_norm**alpha) ** gamma
+
 #--------------------------------------------------#
 #                 SET PARAMETERS                   #
 #--------------------------------------------------#
 
 params = {
 
-    "geometry": "custom",
+    "geometry": "ITER",
     #"boundary": default,
-    "vessel_outer_wall": vessel_outer,
-    "vessel_inner_wall": vessel_inner,
-    "coils": [coil1, coil2],
-    "limiter_pts": None,
-    "limiter_line": lim_line,
+    #"vessel_outer_wall": vessel_outer,
+    #"vessel_inner_wall": vessel_inner,
+    #"coils": [coil1, coil2],
+    #"limiter_pts": None,
+    #"limiter_line": lim_line,
     "mesh_size_min": 0.005,
     "mesh_size_max": 0.01,
     "limiter_mesh_size": 0.001,
     "dist_from_limiter": 0.1,
     "coils_mesh_size": 0.01,
     #"dist_from_coils": 0.1,
-    #"I": [-6.705e5, 1.373e4, 2.133e6, 1.432e6, -3.774e5, -6.172e5, -1.885e6, -2.359e6, -2.124e6, -1.836e6, -3.491e6, -2.04e6],        # Coil currents
-    "I": [1e6, 1.0e6],  # Coil currents (for testing, use 1.0 for both coils)
-    "j_cv": 1e7,                # Vessel wall current density
+    "I": [-6.705e5, 1.373e4, 2.133e6, 1.432e6, -3.774e5, -6.172e5, -1.885e6, -2.359e6, -2.124e6, -1.836e6, -3.491e6, -2.04e6],        # Coil currents
+    #"I": [1e6, 1.0e6],  # Coil currents (for testing, use 1.0 for both coils)
+    "j_cv": 0,                # Vessel wall current density
     "function_space_family": "P",
     "function_space_degree": 2,
     "max_iterations": 1000,
     "tolerance": 1e-5,
     "verbose": True,
-    # G function as a lambda (x, psi) -> x**2 + psi
-    "G": lambda x, psi: x**2 + 1,
+    "G": G,
     # Initial guess (can be a Constant or a Firedrake Function)
-    "initial_guess": Constant(0.0),
+    "initial_guess": Constant(1e-5),
+    "norm_initial_guess": Constant(0.0),
+    #"algorithm": "Picard",
     "algorithm": "Marder-Weitzner",
-    "alpha": 0.4,
+    "alpha": 0.3,  # Relaxation Parameter
 }
 
 
