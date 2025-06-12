@@ -165,7 +165,40 @@ class GradShafranovSolver:
         self.plasma_mask = Function(self.V)     # Plasma mask function
 
 
-    # SOLVER METHOD:
+    # SOLVER METHODS:
+    def normalize_flux(self, psi, psi_N):
+        """
+        Normalize the poloidal flux function psi.
+        The normalized flux ranges from 0 at the magnetic axis to 1 at the plasma boundary.
+        To avoid numerical instabilities the maximum value of the normalized flux is set to 0.99.
+        Starting from the magnetic surface which correspond to a normalized psi of 0.99,
+        the normalized flux is indeed set as constant = 0.99.
+
+        :param psi: The poloidal flux function to normalize.
+        :param psi_N: The normalized poloidal flux function to be updated.
+
+        :return: The normalized poloidal flux function.
+        """
+        # Compute the flux value in the magnetic axis:
+        self.psi_max = psi.vector().max()
+
+        # Compute the flux value at the plasma boundary:
+        if isinstance(self.limiter[0], tuple):
+            self.psi0 = max(psi.at(pt) for pt in self.limiter)
+        else:
+            self.psi0 = max(psi.dat.data[self.limiter])
+
+        # Normalize the poloidal flux:       
+        denominator = self.psi_max - self.psi0
+        if denominator < 1e-14: # Avoid division by zero
+            psi_N.assign(Constant(0.0))
+        else:
+            psi_N.interpolate(conditional(
+                (self.psi_max - psi) / denominator > 0.99,
+                Constant(0.99),
+                (self.psi_max - psi) / denominator
+            )) 
+
     def solve(self):
         """
         Solve the Grad-Shafranov problem.
@@ -219,22 +252,8 @@ class GradShafranovSolver:
                                  self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
                 solve(a == 0, psi_step, bcs = [self.BCs])
 
-                # Update axial and plasma boundary values of flux psi_(1/3):
-                self.psi_max = psi_step.vector().max()
-                if isinstance(self.limiter[0], tuple):
-                    self.psi0 = max(psi_step.at(pt) for pt in self.limiter)
-                else:
-                    self.psi0 = max(psi_step.dat.data[self.limiter])
-                
-                denominator = self.psi_max - self.psi0
-                if denominator < 1e-14: # Avoid division by zero
-                    psi_N.assign(Constant(0.0))
-                else:
-                    psi_N.interpolate(conditional(
-                        (self.psi_max - psi_step) / denominator > 0.99,
-                        Constant(0.99),
-                        (self.psi_max - psi_step) / denominator))
-                    
+                # Normalize the intermediate step flux
+                self.normalize_flux(psi_step, psi_N)
                 #self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi_step - self.psi0) / (epsilon * self.psi0)))
 
                 # Compute second step flux of Marder-Weitzner method:
@@ -249,32 +268,17 @@ class GradShafranovSolver:
             else:
                 raise ValueError(f"Unknown algorithm '{self.algorithm}'. Supported algorithms are 'Picard' and 'Marder-Weitzner'.")
 
-            # Compute error:
+            # Compute H1 error:
             self.err = errornorm(self.psi, psi_old, 'H1') / norm(psi_old, 'H1')
             
-            # Update psi_old and mask for the next iteration
-            psi_old.assign(self.psi)
-            
-            # Update the plasma mask based on the new psi
-            if isinstance(self.limiter[0], tuple):  # List of (x, y) coordinates
-                self.psi0 = max(self.psi.at(pt) for pt in self.limiter)
-            else:  # List/array of node indices
-                self.psi0 = max(self.psi.dat.data[self.limiter])
+            # Normalize the poloidal flux:
+            self.normalize_flux(self.psi, psi_N)
+
+            # Update the plasma mask (smoothed:
             self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi - self.psi0) / (epsilon * self.psi0)))
 
-            # Update the value of psi at the magnetic axis:
-            self.psi_max = self.psi.vector().max()
-
-            # Update the normalized ploidal flux:
-            denominator = self.psi_max - self.psi0
-            # Avoid division by zero if the flux profile is too flat:
-            if denominator < 1e-14: 
-                psi_N.assign(Constant(0.0))
-            else:
-                psi_N.interpolate(conditional(
-                    (self.psi_max - self.psi) / denominator > 0.99,
-                    Constant(0.99),
-                    (self.psi_max - self.psi) / denominator))
+            # Update psi_old and mask for the next iteration
+            psi_old.assign(self.psi)
 
             # Print iteration information
             if(self.params.get("verbose", False)):
@@ -334,8 +338,8 @@ class GradShafranovSolver:
         print("Plotting flux in file 'results/contour_plot.png'...")
 
         fig, ax = plt.subplots()
-        tricontourf(self.psi, levels=50, cmap='viridis', axes=ax, figure=fig)
-        tricontour(self.psi, levels=[self.psi0], colors='red', linewidths=2, figure=fig, axes=ax)
+        tricontourf(self.psi, levels=50, cmap='viridis', axes=ax)
+        tricontour(self.psi, levels=[self.psi0], colors='red', linewidths=2, axes=ax)
         #triplot(self.Mesh, axes=ax)
         # Plot the plasma boundary:
         #plt.contour(self.x, self.y, self.psi, levels=[self.psi0], colors='red')

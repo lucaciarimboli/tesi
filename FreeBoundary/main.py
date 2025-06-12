@@ -1,4 +1,5 @@
 import sys
+import time
 sys.path.append(".")
 
 from solver import GradShafranovSolver
@@ -85,9 +86,9 @@ params = {
     # Initial guess (can be a Constant or a Firedrake Function)
     "initial_guess": Constant(1e-5),
     "norm_initial_guess": Constant(0.0),
-    #"algorithm": "Picard",
-    "algorithm": "Marder-Weitzner",
-    "alpha": 0.3,  # Relaxation Parameter
+    "algorithm": "Picard",
+    #"algorithm": "Marder-Weitzner",
+    #"alpha": 0.3,  # Relaxation Parameter
 }
 
 
@@ -96,10 +97,19 @@ params = {
 #--------------------------------------------------#
 
 if __name__ == "__main__":
+    
+    start_time = time.time()
+
     solver = GradShafranovSolver(params)
     solver.display_mesh()
     solver.solve()
     solver.plot_flux()
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    minutes = int(elapsed_time // 60)
+    seconds = int(elapsed_time % 60)
+    print(f"Simulation ended in {minutes} min. and {seconds} sec.")
 
 #--------------------------------------------------#
 #            TO SHOW GRID INDEPENDENCE             #

@@ -3,5 +3,10 @@
 <Collection>
 <DataSet timestep="0" file="flux/flux_0.vtu" />
 <DataSet timestep="1" file="flux/flux_1.vtu" />
+<DataSet timestep="2" file="flux/flux_2.vtu" />
+<DataSet timestep="3" file="flux/flux_3.vtu" />
+<DataSet timestep="4" file="flux/flux_4.vtu" />
+<DataSet timestep="5" file="flux/flux_5.vtu" />
+<DataSet timestep="6" file="flux/flux_6.vtu" />
 </Collection>
 </VTKFile>
