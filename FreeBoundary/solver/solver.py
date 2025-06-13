@@ -2,7 +2,8 @@ from firedrake import *
 from firedrake.pyplot import triplot, tricontour, tricontourf
 from .functions.geometry import generate_mesh
 from .functions.mesh_tags import get_tags
-from .functions.varf import Picard_varf
+from .functions.varf import Picard_varf, Newton_varf
+from .functions.coils import compute_j_coils
 import os
 import matplotlib.pyplot as plt
 
@@ -34,7 +35,6 @@ class GradShafranovSolver:
         self.BCs = DirichletBC(self.V, 0.0, self.tags['boundary'])
 
         # Extract the nodes that lie on the limiter:
-
         if self.tags['limiter'] is not None:
             self.limiter = DirichletBC(self.V, 0.0, self.tags['limiter']).nodes
 
@@ -45,6 +45,9 @@ class GradShafranovSolver:
         # AGGIUNGERE UN METODO PER "ESTRARRE" I SINGOLI PHYSICAL POINTS USANDO I TAG, SENZA DUNQUE PASSARE LE COORDINATE DIRETTAMENTE
         # ------------------------------------------------------------------------------------------------------------------------- #
         
+        # Compute the coils current density:
+        self.j_coils = compute_j_coils(self.Mesh, self.tags['coils'], params["I"])
+
         self.converged = False
         self.set_algorithm(params.get("algorithm", "Picard"))  # Default algorithm is Picard
 
@@ -54,9 +57,9 @@ class GradShafranovSolver:
         """
         Set the algorithm for solving the Grad-Shafranov equation.
 
-        :param algorithm: The algorithm to use (e.g., "Picard", "Marder-Weitzner").
+        :param algorithm: The algorithm to use (e.g., "Picard", "Newton").
         """
-        if algorithm not in ["Picard", "Marder-Weitzner"]:
+        if algorithm not in ["Picard", "Marder-Weitzner", "Newton"]:
             self.algorithm = "Picard"  # Default to Picard if invalid algorithm is provided
             print(f"Invalid algorithm '{algorithm}' provided. Defaulting to 'Picard'.")
         else:
@@ -176,8 +179,6 @@ class GradShafranovSolver:
 
         :param psi: The poloidal flux function to normalize.
         :param psi_N: The normalized poloidal flux function to be updated.
-
-        :return: The normalized poloidal flux function.
         """
         # Compute the flux value in the magnetic axis:
         self.psi_max = psi.vector().max()
@@ -192,12 +193,14 @@ class GradShafranovSolver:
         denominator = self.psi_max - self.psi0
         if denominator < 1e-14: # Avoid division by zero
             psi_N.assign(Constant(0.0))
+            self.denom = 1
         else:
             psi_N.interpolate(conditional(
                 (self.psi_max - psi) / denominator > 0.99,
                 Constant(0.99),
                 (self.psi_max - psi) / denominator
             )) 
+            self.denom = denominator
 
     def solve(self):
         """
@@ -217,14 +220,17 @@ class GradShafranovSolver:
             psi_old.interpolate(Constant(1e-5))  # Not 0 to avoid division by zero in the first iteration
             psi_N.interpolate(Constant(0.0))
 
+        # Initialize psi_max - psi_boundary to 1:
+        self.denom = 1
+
         # Initialize the plasma mask:
         self.plasma_mask.interpolate(Constant(1.0))
         epsilon = 0.01  # Smoothing parameter for the plasma mask
 
-        # Define intermidiate solutions for multi-step methods if needed:
+        # Define function for intermediate solution of multi-step method
         if self.algorithm == "Marder-Weitzner":
             psi_step = Function(self.V)
-            alpha = self.params.get("alpha", 0.5)  # Default alpha value for Marder-Weitzner method
+            alpha = self.params.get("alpha", 0.5)  # Relaxation parameter
 
         # Set up the solver parameters
         maxit = self.params.get("max_iterations", 100)
@@ -240,7 +246,7 @@ class GradShafranovSolver:
             # Solve the variational problem
             if self.algorithm == "Picard":
                 a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N,
-                                self.plasma_mask, self.params["j_cv"], self.params["I"],
+                                self.plasma_mask, self.params["j_cv"], self.j_coils,
                                 self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
                 solve(a == 0, self.psi, bcs = [self.BCs])
 
@@ -248,7 +254,7 @@ class GradShafranovSolver:
 
                 # Compute first-step flux of Marder-Weitzner method:
                 a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, psi_step, psi_N,
-                                 self.plasma_mask, self.params["j_cv"], self.params["I"],
+                                 self.plasma_mask, self.params["j_cv"], self.j_coils,
                                  self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
                 solve(a == 0, psi_step, bcs = [self.BCs])
 
@@ -258,12 +264,20 @@ class GradShafranovSolver:
 
                 # Compute second step flux of Marder-Weitzner method:
                 a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N,
-                                 self.plasma_mask, self.params["j_cv"], self.params["I"],
+                                 self.plasma_mask, self.params["j_cv"], self.j_coils,
                                  self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
                 solve(a == 0, self.psi, bcs = [self.BCs])
 
                 # Update flux using the Marder-Weitzner method with relaxation alpha:
                 self.psi.assign( (1-alpha) * psi_old + 2*alpha *psi_step - alpha * self.psi )
+
+            elif self.algorithm == "Newton":
+                print(f'\nValue of the denominator: {self.denom}')
+                a = Newton_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N, psi_old,
+                                self.denom, self.plasma_mask, self.params["j_cv"], self.j_coils,
+                                self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+
+                solve(a == 0, self.psi, bcs = [self.BCs])
 
             else:
                 raise ValueError(f"Unknown algorithm '{self.algorithm}'. Supported algorithms are 'Picard' and 'Marder-Weitzner'.")

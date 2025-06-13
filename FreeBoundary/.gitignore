@@ -1,3 +1,2 @@
 # Ignore all files inside the results folder
-results/*
-!results/
+FreeBoundary/results/*

@@ -86,9 +86,10 @@ params = {
     # Initial guess (can be a Constant or a Firedrake Function)
     "initial_guess": Constant(1e-5),
     "norm_initial_guess": Constant(0.0),
-    "algorithm": "Picard",
+    #"algorithm": "Picard",
     #"algorithm": "Marder-Weitzner",
     #"alpha": 0.3,  # Relaxation Parameter
+    "algorithm": "Newton"
 }
 
 
