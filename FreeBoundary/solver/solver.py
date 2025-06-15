@@ -65,7 +65,7 @@ class GradShafranovSolver:
         else:
             self.algorithm = algorithm
 
-    def set_iterations_params(self, max_iterations, tolerance, verbose=False):
+    def set_iterations_params(self, max_iterations = None, tolerance = None, verbose=False):
         """
         Set the parameters for the solver iterations.
         
@@ -91,7 +91,7 @@ class GradShafranovSolver:
             self.params["j_cv"] = j_cv
             self.params["I"] = I
 
-    def set_initial_guess(self, initial_guess):
+    def set_initial_guess(self, initial_guess=Constant(0.0)):
         """
         Set the initial guess for the flux function psi.
         
@@ -188,7 +188,7 @@ class GradShafranovSolver:
             self.psi0 = max(psi.at(pt) for pt in self.limiter)
         else:
             self.psi0 = max(psi.dat.data[self.limiter])
-
+ 
         # Normalize the poloidal flux:       
         denominator = self.psi_max - self.psi0
         if denominator < 1e-14: # Avoid division by zero
@@ -212,16 +212,15 @@ class GradShafranovSolver:
         # Poloidal flux old iteration:
         psi_old = Function(self.V)      # poloidal flux old iteration
         psi_N = Function(self.V)        # normalized poloidal flux
-        if "initial_guess" in self.params and "norm_initial_guess" in self.params:
+
+        if "initial_guess" in self.params:
             psi_old.assign(self.params["initial_guess"])
-            psi_N.assign(self.params["norm_initial_guess"])
+            self.normalize_flux(psi_old, psi_N)
         else:
-            print("No initial guess provided, using default values.")
+            print("No initial guess provided, using default values...")
             psi_old.interpolate(Constant(1e-5))  # Not 0 to avoid division by zero in the first iteration
             psi_N.interpolate(Constant(0.0))
-
-        # Initialize psi_max - psi_boundary to 1:
-        self.denom = 1
+            self.denom = 1
 
         # Initialize the plasma mask:
         self.plasma_mask.interpolate(Constant(1.0))
@@ -273,11 +272,14 @@ class GradShafranovSolver:
 
             elif self.algorithm == "Newton":
                 print(f'\nValue of the denominator: {self.denom}')
-                a = Newton_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N, psi_old,
+                J, F = Newton_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N, psi_old,
                                 self.denom, self.plasma_mask, self.params["j_cv"], self.j_coils,
                                 self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-
-                solve(a == 0, self.psi, bcs = [self.BCs])
+                print("Max of residual vector F:", assemble(F).dat.data.max())
+                print("Norm of Jacobian matrix J:", assemble(J).petscmat.norm())
+                
+                solve(J == -F, self.psi, bcs = [self.BCs])
+                self.psi.assign(self.psi + psi_old)
 
             else:
                 raise ValueError(f"Unknown algorithm '{self.algorithm}'. Supported algorithms are 'Picard' and 'Marder-Weitzner'.")

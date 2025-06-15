@@ -1,6 +1,18 @@
 from firedrake import *
 
 def compute_j_coils(mesh, tags, I):
+    """
+    Compute the current density flowing in each coil. The current density j is given by I / S,
+    the surface is computed by Lebesgue measure using numerical integration. 
+
+    Parameters:
+    - mesh: The mesh on which the problem is defined.
+    - tags: The mesh tags of each coil
+    - I: Currents in Ampére in each coil
+
+    Returns:
+    - j_coils: The current density for each coil [A/m^2]
+    """
     
     j_coils = []
 

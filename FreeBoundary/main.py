@@ -85,7 +85,6 @@ params = {
     "G": G,
     # Initial guess (can be a Constant or a Firedrake Function)
     "initial_guess": Constant(1e-5),
-    "norm_initial_guess": Constant(0.0),
     #"algorithm": "Picard",
     #"algorithm": "Marder-Weitzner",
     #"alpha": 0.3,  # Relaxation Parameter
@@ -96,13 +95,13 @@ params = {
 #--------------------------------------------------#
 #        EXECUTE SOLVER AND PLOT RESULTS           #
 #--------------------------------------------------#
-
+'''
 if __name__ == "__main__":
     
     start_time = time.time()
 
     solver = GradShafranovSolver(params)
-    solver.display_mesh()
+    #solver.display_mesh()
     solver.solve()
     solver.plot_flux()
 
@@ -111,40 +110,65 @@ if __name__ == "__main__":
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
     print(f"Simulation ended in {minutes} min. and {seconds} sec.")
-
+'''
 #--------------------------------------------------#
 #            TO SHOW GRID INDEPENDENCE             #
 #--------------------------------------------------#
+'''
+if __name__ == "__main__":
 
-#if __name__ == "__main__":
+    psi_max = []
+    psi0 = []
 
-#    psi_max = []
-#    psi0 = []
+    for i in range(6):
+        params["mesh_size_min"] = 0.01 / (2 ** i)
+        params["mesh_size_max"] = 0.05 / (2 ** i)
+        params["limiter_mesh_size"] = 0.1 / (2 ** i)
+        params["dist_from_limiter"] = 0.1 / (2 ** i)
 
-#    for i in range(6):
-#        params["mesh_size_min"] = 0.01 / (2 ** i)
-#        params["mesh_size_max"] = 0.05 / (2 ** i)
-#        params["limiter_mesh_size"] = 0.1 / (2 ** i)
-#        params["dist_from_limiter"] = 0.1 / (2 ** i)
+        print(f"Running solver with mesh size factor: {2**i}")
+        solver = GradShafranovSolver(params)
+        solver.display_mesh()
+        solver.solve()
+        solver.plot_flux()
 
-#        print(f"Running solver with mesh size factor: {2**i}")
-#        solver = GradShafranovSolver(params)
-#        solver.display_mesh()
-#        solver.solve()
-#        solver.plot_flux()
-
-#        psi_max.append(solver.psi.vector().max())
-#        psi0.append(solver.psi0)
+        psi_max.append(solver.psi.vector().max())
+        psi0.append(solver.psi0)
     
-#    import matplotlib.pyplot as plt
+    import matplotlib.pyplot as plt
 
-#    refinement_levels = list(range(6))
-#    plt.figure()
-#    plt.plot(refinement_levels, psi_max, marker='o', label='psi_max')
-#    plt.plot(refinement_levels, psi0, marker='s', label='psi0')
-#    plt.xlabel('Refinement level (i)')
-#    plt.ylabel('Value')
-#    plt.title('Grid Independence Study')
-#    plt.legend()
-#    plt.grid(True)
-#    plt.savefig("./results/grid_independence.png")
+    refinement_levels = list(range(6))
+    plt.figure()
+    plt.plot(refinement_levels, psi_max, marker='o', label='psi_max')
+    plt.plot(refinement_levels, psi0, marker='s', label='psi0')
+    plt.xlabel('Refinement level (i)')
+    plt.ylabel('Value')
+    plt.title('Grid Independence Study')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("./results/grid_independence.png")
+'''
+
+#--------------------------------------------------#
+#     SOME PICARD ITERATIONS FOR INITIAL GUESS     #
+#--------------------------------------------------#
+
+if __name__ == "__main__":
+
+    # Perform some Picard iterations:
+    params["max_iterations"] = 50
+    #params["algorithm"] = "Picard"
+    params["algorithm"] = "Marder-Weitzner"
+    params["alpha"] = 0.4 # relaxation parameter
+
+    solver = GradShafranovSolver(params)
+    solver.solve()
+
+    # Use the result as initial guess for Newton method:
+    solver.set_iterations_params(max_iterations=1000, tolerance=params["tolerance"], verbose=True)
+    solver.set_algorithm("Newton")
+    solver.set_initial_guess(initial_guess=solver.psi)
+
+    # Solve using Newton method starting from a closer psi_initial:
+    solver.solve()
+    solver.plot_flux()
