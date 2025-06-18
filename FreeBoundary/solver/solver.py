@@ -6,6 +6,7 @@ from .functions.varf import Picard_varf, Newton_varf
 from .functions.coils import compute_j_coils
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 
 class GradShafranovSolver:
 
@@ -22,6 +23,7 @@ class GradShafranovSolver:
 
         # Initialize the mesh and function spaces
         self.build_mesh()
+        self.Mesh.init()
         self.function_spaces()
 
         # Identify the tags for the mesh:
@@ -89,7 +91,7 @@ class GradShafranovSolver:
         else:
             # Update the data in self.params:
             self.params["j_cv"] = j_cv
-            self.params["I"] = I
+            self.j_coils = compute_j_coils(self.Mesh, self.tags['coils'], I)
 
     def set_initial_guess(self, initial_guess=Constant(0.0)):
         """
@@ -142,10 +144,10 @@ class GradShafranovSolver:
         else:
             print(f"\nLoading mesh for geometry '{self.params['geometry']}'...")
             path = "./meshes/" + self.params['geometry'] + ".msh"
-            if not os.path.exists(path):
-                raise FileNotFoundError(f"Mesh file {path} does not exist.")
-            else: 
-                self.Mesh = Mesh(path, distribution_parameters={"partition": False})
+            #if not os.path.exists(path):
+            #    raise FileNotFoundError(f"Mesh file {path} does not exist.")
+            #else: 
+            self.Mesh = Mesh(path, distribution_parameters={"partition": False})
 
     def function_spaces(self, family=None, degree=None):
         """
@@ -163,8 +165,10 @@ class GradShafranovSolver:
         self.x, self.y = SpatialCoordinate(self.Mesh)
 
         # Define test and trial functions:
+        self.psi_trial = TrialFunction(self.V)  # Trial function
         self.phi = TestFunction(self.V)         # Test function
-        self.psi = Function(self.V)             # Trial flux function
+
+        self.psi = Function(self.V)             # Result flux function
         self.plasma_mask = Function(self.V)     # Plasma mask function
 
 
@@ -202,6 +206,75 @@ class GradShafranovSolver:
             )) 
             self.denom = denominator
 
+    def perform_iteration(self, psi_N, psi_old, solver_params):
+        '''
+        Perform one iteration of the solution of Grad-Shafranov equation,
+        using the iterative method prescribed by the class status.
+
+        :param psi_N: normalized flux field at the previous iteration
+        :param psi_old: magnetic flux field at the previous iteration
+        :param solver_params: eventually contains other needed parameters
+                (e.g. relaxation coeff for multi-step methods)
+        '''
+
+        # Case Picard:
+        if self.algorithm == "Picard":
+            a,L = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N,
+                            self.plasma_mask, self.params["j_cv"], self.j_coils,
+                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+            solve(a == L, self.psi, bcs = [self.BCs])
+            
+            # Per ottimizzare potrei assemblare "A" fuori dal ciclo while:
+            '''
+            a = Picard_Varf_a( etc. etc. )
+            A = assemble(a, bcs=[self.BCs])
+            solver = LinearSolver(A,
+                  solver_parameters={'ksp_type': 'preonly',
+                                     'pc_type': 'lu'})
+            '''
+            # E poi aggiornare ad ogni iter solo b:
+            '''
+            L = Picard_varf_L( etc. etc. )
+            b = assemble(L, bcs=[self.BCs])
+            solver.solve(self.psi, b)
+            '''
+
+        elif self.algorithm == "Marder-Weitzner":
+            
+            alpha = solver_params["alpha"]     # relaxation parameter:
+            psi_step = Function(self.V) # function to store intermediate step solution:
+            psi_step.assign(psi_old)
+
+            # Compute first-step flux of Marder-Weitzner method:
+            a,L = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N,
+                            self.plasma_mask, self.params["j_cv"], self.j_coils,
+                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+            solve(a == L, psi_step, bcs = [self.BCs])
+
+            # Normalize the intermediate step flux
+            self.normalize_flux(psi_step, psi_N)
+            #self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi_step - self.psi0) / (epsilon * self.psi0)))
+
+            # Compute second step flux of Marder-Weitzner method:
+            a,L = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N,
+                            self.plasma_mask, self.params["j_cv"], self.j_coils,
+                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+            solve(a == L, self.psi, bcs = [self.BCs])
+
+            # Update flux using the Marder-Weitzner method with relaxation alpha:
+            self.psi.assign( (1-alpha) * psi_old + 2*alpha * psi_step - alpha * self.psi )
+
+        elif self.algorithm == "Newton":
+            print(f'\nValue of the denominator: {self.denom}')
+            a, L = Newton_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N, psi_old,
+                            self.denom, self.plasma_mask, self.params["j_cv"], self.j_coils,
+                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
+            #print("Max of residual vector F:", assemble(F).dat.data.max())
+            #print("Norm of Jacobian matrix J:", assemble(J).petscmat.norm())
+                
+            solve(a == L, self.psi, bcs = [self.BCs])
+            #self.psi.assign(self.psi + psi_old)
+
     def solve(self):
         """
         Solve the Grad-Shafranov problem.
@@ -223,13 +296,15 @@ class GradShafranovSolver:
             self.denom = 1
 
         # Initialize the plasma mask:
-        self.plasma_mask.interpolate(Constant(1.0))
+        #self.plasma_mask.interpolate(Constant(1.0))
+        self.plasma_mask.interpolate(Constant(0.5))
+
         epsilon = 0.01  # Smoothing parameter for the plasma mask
 
         # Define function for intermediate solution of multi-step method
+        solver_params = {}
         if self.algorithm == "Marder-Weitzner":
-            psi_step = Function(self.V)
-            alpha = self.params.get("alpha", 0.5)  # Relaxation parameter
+            solver_params["alpha"] = self.params.get("alpha", 0.5) # Relaxation parameter
 
         # Set up the solver parameters
         maxit = self.params.get("max_iterations", 100)
@@ -243,46 +318,7 @@ class GradShafranovSolver:
         while not self.converged and it < maxit:
 
             # Solve the variational problem
-            if self.algorithm == "Picard":
-                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N,
-                                self.plasma_mask, self.params["j_cv"], self.j_coils,
-                                self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-                solve(a == 0, self.psi, bcs = [self.BCs])
-
-            elif self.algorithm == "Marder-Weitzner":
-
-                # Compute first-step flux of Marder-Weitzner method:
-                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, psi_step, psi_N,
-                                 self.plasma_mask, self.params["j_cv"], self.j_coils,
-                                 self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-                solve(a == 0, psi_step, bcs = [self.BCs])
-
-                # Normalize the intermediate step flux
-                self.normalize_flux(psi_step, psi_N)
-                #self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi_step - self.psi0) / (epsilon * self.psi0)))
-
-                # Compute second step flux of Marder-Weitzner method:
-                a = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N,
-                                 self.plasma_mask, self.params["j_cv"], self.j_coils,
-                                 self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-                solve(a == 0, self.psi, bcs = [self.BCs])
-
-                # Update flux using the Marder-Weitzner method with relaxation alpha:
-                self.psi.assign( (1-alpha) * psi_old + 2*alpha *psi_step - alpha * self.psi )
-
-            elif self.algorithm == "Newton":
-                print(f'\nValue of the denominator: {self.denom}')
-                J, F = Newton_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi, psi_N, psi_old,
-                                self.denom, self.plasma_mask, self.params["j_cv"], self.j_coils,
-                                self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-                print("Max of residual vector F:", assemble(F).dat.data.max())
-                print("Norm of Jacobian matrix J:", assemble(J).petscmat.norm())
-                
-                solve(J == -F, self.psi, bcs = [self.BCs])
-                self.psi.assign(self.psi + psi_old)
-
-            else:
-                raise ValueError(f"Unknown algorithm '{self.algorithm}'. Supported algorithms are 'Picard' and 'Marder-Weitzner'.")
+            self.perform_iteration(psi_N, psi_old, solver_params)
 
             # Compute H1 error:
             self.err = errornorm(self.psi, psi_old, 'H1') / norm(psi_old, 'H1')
@@ -310,9 +346,9 @@ class GradShafranovSolver:
                 it += 1
 
         if not self.converged:
-            print(f"Solver did not converge after {maxit} iterations. Final H1 Error = {self.err:.6e}")
+            print(f"Solver did not converge after {maxit} iterations. Final H1 Error = {self.err:.6e}\n")
         else:
-            print(f"Solver converged in {it} iterations. Final H1 Error = {self.err:.6e}")
+            print(f"Solver converged in {it} iterations. Final H1 Error = {self.err:.6e}\n")
 
 
     # PLOT METHODS:
@@ -346,6 +382,7 @@ class GradShafranovSolver:
         plt.close()
 
     def plot_flux(self):
+
         """
         Plot the flux function psi.
         This method saves a contour plot of the flux function in the results directory.
@@ -382,3 +419,77 @@ class GradShafranovSolver:
         plt.axis('equal')
         plt.savefig("./results/contour_plot.png")
         plt.close()
+
+
+    # CONVERGENCE TEST:
+    def compute_plasma_area(self):
+        '''
+        Computes the area of the plasma region in the poloidal plane.
+        The computation uses Lebesgue measure, the integral is performed over the elements that are completely included by the plasma.
+        '''
+        psi0_func = Function(self.V)
+        psi0_func.assign(Constant(self.psi0))
+        plasma_region = SubDomainData(self.psi > psi0_func)
+
+        return assemble(Constant(1.0) * dx(plasma_region,domain=mesh))
+
+    def convergence_test(self, refinment_levels = 2):
+        '''
+        Performs a convercence test for the current set up.
+
+        Other meshes are defined by unformly refining the solver's one at the current status.
+        A simulation is performed for every mesh and the behavior of relevant quantities against the refinment level is plotted.
+
+        The plot is saved in "results/grid_independence.png".
+        The relevant quantites under inspection are:
+            - (normalized) magnetic flux value at the magnetic axes;
+            - (normalized) magnetic flux value at the plasma boundary;
+            - (normalized) plasma region area in the poloidal plane.
+
+        :param refinement_levels: number of mesh generated OTHER THAN the status one (default value is 2).
+        '''
+
+        psi_max_vect = []
+        psi0_vect = []
+        #plasma_area = []
+        h_min = []
+
+        print('Building meshes with increasing refinement levels...')
+        meshes = MeshHierarchy(self.Mesh, refinment_levels)
+
+        for n in range(refinment_levels):
+            self.Mesh = meshes[n]
+            self.Mesh.init()
+
+            h_min.append(self.Mesh.cell_sizes.dat.data.min())
+            print(f'\nSolving with minimum cell size h = {h_min[n]}...')
+
+            # Adapt function spaces to the new refinment level:
+            self.function_spaces()
+            self.BCs = DirichletBC(self.V, 0.0, self.tags['boundary'])
+            self.limiter = DirichletBC(self.V, 0.0, self.tags['limiter']).nodes
+
+            self.solve()
+
+            print('Saving results from simulation...')
+            psi_max_vect.append(self.psi_max)
+            psi0_vect.append(self.psi0)
+            #plasma_area.append(self.compute_plasma_area())
+
+        # Non-dimensionalize reference quantities:
+        print(f'Plotting results...')
+        h_min = np.array(h_min)
+        #plasma_area = np.array(plasma_area) / plasma_area[0]
+        psi_max_vect = np.array(psi_max_vect) / psi_max_vect[0]
+        psi0_vect = np.array(psi0_vect) / psi0_vect[0]
+
+        plt.figure()
+        plt.plot(h_min, psi_max_vect, marker='o', label='psi_max')
+        plt.plot(h_min, psi0_vect, marker='s', label='psi0')
+        #plt.plot(h_min, plasma_area, marker='^', label='Relative Plasma Area')
+        plt.xlabel('Minimum cell size h')
+        plt.ylabel('Value')
+        plt.title('Grid Independence Study')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig("./results/grid_independence.png")

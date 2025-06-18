@@ -68,54 +68,68 @@ params = {
     #"coils": [coil1, coil2],
     #"limiter_pts": None,
     #"limiter_line": lim_line,
-    "mesh_size_min": 0.005,
-    "mesh_size_max": 0.01,
-    "limiter_mesh_size": 0.001,
-    "dist_from_limiter": 0.1,
-    "coils_mesh_size": 0.01,
+    #"mesh_size_min": 0.005,
+    #"mesh_size_max": 0.01,
+    #"limiter_mesh_size": 0.001,
+    #"dist_from_limiter": 0.1,
+    #"coils_mesh_size": 0.01,
     #"dist_from_coils": 0.1,
-    "I": [-6.705e5, 1.373e4, 2.133e6, 1.432e6, -3.774e5, -6.172e5, -1.885e6, -2.359e6, -2.124e6, -1.836e6, -3.491e6, -2.04e6],        # Coil currents
-    #"I": [1e6, 1.0e6],  # Coil currents (for testing, use 1.0 for both coils)
+    "I": [-6.705e5, 1.373e4, 2.133e6, 1.432e6, -3.774e5, -6.172e5, -1.885e6, -2.359e6, -2.124e6, -1.836e6, -3.491e6, -2.04e6],
     "j_cv": 0,                # Vessel wall current density
     "function_space_family": "P",
     "function_space_degree": 2,
     "max_iterations": 1000,
-    "tolerance": 1e-5,
+    "tolerance": 1e-4,
     "verbose": True,
     "G": G,
     # Initial guess (can be a Constant or a Firedrake Function)
-    "initial_guess": Constant(1e-5),
-    #"algorithm": "Picard",
+    "initial_guess": Constant(0.0),
+    "algorithm": "Picard",
     #"algorithm": "Marder-Weitzner",
-    #"alpha": 0.3,  # Relaxation Parameter
-    "algorithm": "Newton"
+    #"alpha": 0.4,  # Relaxation Parameter
+    #"algorithm": "Newton"
 }
 
 
 #--------------------------------------------------#
 #        EXECUTE SOLVER AND PLOT RESULTS           #
 #--------------------------------------------------#
-'''
+
+
 if __name__ == "__main__":
     
     start_time = time.time()
 
+    params["tolerance"] = 1e-2
+    params["algorithm"] = "Newton"
     solver = GradShafranovSolver(params)
     #solver.display_mesh()
     solver.solve()
-    solver.plot_flux()
+    #solver.plot_flux()
+
+    solver.set_algorithm("Marder-Weitzner")
+    solver.solve()
+
+    solver.set_algorithm("Picard")
+    solver.solve()
+
 
     end_time = time.time()
     elapsed_time = end_time - start_time
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
     print(f"Simulation ended in {minutes} min. and {seconds} sec.")
-'''
+
+
 #--------------------------------------------------#
 #            TO SHOW GRID INDEPENDENCE             #
 #--------------------------------------------------#
 '''
 if __name__ == "__main__":
+    solver = GradShafranovSolver(params)
+    solver.display_mesh()
+    solver.convergence_test()
+    
 
     psi_max = []
     psi0 = []
@@ -152,7 +166,7 @@ if __name__ == "__main__":
 #--------------------------------------------------#
 #     SOME PICARD ITERATIONS FOR INITIAL GUESS     #
 #--------------------------------------------------#
-
+'''
 if __name__ == "__main__":
 
     # Perform some Picard iterations:
@@ -172,3 +186,4 @@ if __name__ == "__main__":
     # Solve using Newton method starting from a closer psi_initial:
     solver.solve()
     solver.plot_flux()
+'''
