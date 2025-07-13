@@ -23,11 +23,11 @@ def get_tags(geometry, params=None):
     
     if geometry == "ITER":
         # ITER geometry tags
-        tags['boundary'] = 16
-        tags['vacuum'] = 13
-        tags['vessel'] = 14
-        tags['limiter'] = 19
-        tags['coils'] = [1,2,3,4,5,6,7,8,9,10,11,12]
+        tags['boundary'] = 15
+        #tags['vacuum'] = 13
+        tags['limiter'] = 16
+        tags['inside limiter'] = 2
+        tags['coils'] = [3,4,5,6,7,8,9,10,11,12,13,14]
 
     elif geometry == "custom":
         tags['boundary'] = 0
@@ -81,6 +81,9 @@ def get_tags_from_file():
                 name = gmsh.model.getPhysicalName(dim, tag)
                 if name.startswith("LimiterPoint_"):
                     limiter_pts_tags.append(tag)
+
+            # AGGIUNGI L'ESTRAZIONE DEL TAG DELLA REGIONE INTERNA AL LIMITER
+            # NEL CASO DI LIMITER_LINE
 
         if not coils_tags:
             print("No coil tags found in the GMSH file.")

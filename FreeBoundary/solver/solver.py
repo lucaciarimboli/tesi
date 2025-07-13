@@ -2,8 +2,9 @@ from firedrake import *
 from firedrake.pyplot import triplot, tricontour, tricontourf
 from .functions.geometry import generate_mesh
 from .functions.mesh_tags import get_tags
-from .functions.varf import Picard_varf, Newton_varf
+from .functions.varf import form_a, form_b, form_c, form_d
 from .functions.coils import compute_j_coils
+from .functions.ABB_conditions import farfield_form
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,7 +23,8 @@ class GradShafranovSolver:
         self.params = params
 
         # Initialize the mesh and function spaces
-        self.build_mesh()
+        #self.build_mesh()
+        self.Mesh = params["mesh"]   # X NOTEBOOK -> RIPRISTINARE build_mesh()
         self.Mesh.init()
         self.function_spaces()
 
@@ -108,6 +110,7 @@ class GradShafranovSolver:
 
 
     # METHODS FOR THE CONSTRUCTOR:
+    '''
     def build_mesh(self):
         """
         Set the mesh for the Grad-Shafranov problem.
@@ -138,7 +141,7 @@ class GradShafranovSolver:
 
             # Generate the mesh using the geometry parameters
             generate_mesh(geometry_params, path)
-            self.Mesh = Mesh(path, distribution_parameters={"partition": False})
+            self.Mesh = Mesh(path, dim = 2, distribution_parameters={"partition": False}, reorder = True)
 
         # Or load a pre-defined mesh from a file
         else:
@@ -147,8 +150,8 @@ class GradShafranovSolver:
             #if not os.path.exists(path):
             #    raise FileNotFoundError(f"Mesh file {path} does not exist.")
             #else: 
-            self.Mesh = Mesh(path, distribution_parameters={"partition": False})
-
+            self.Mesh = Mesh(path, dim = 2, distribution_parameters={"partition": False}, reorder = True)
+    '''
     def function_spaces(self, family=None, degree=None):
         """
         Define the function spaces for the Grad-Shafranov problem.
@@ -199,11 +202,14 @@ class GradShafranovSolver:
             psi_N.assign(Constant(0.0))
             self.denom = 1
         else:
+            '''
             psi_N.interpolate(conditional(
                 (self.psi_max - psi) / denominator > 0.99,
                 Constant(0.99),
                 (self.psi_max - psi) / denominator
-            )) 
+            ))
+            '''
+            psi_N.interpolate((self.psi_max - psi) / denominator)
             self.denom = denominator
 
     def perform_iteration(self, psi_N, psi_old, solver_params):
@@ -219,61 +225,36 @@ class GradShafranovSolver:
 
         # Case Picard:
         if self.algorithm == "Picard":
-            a,L = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N,
-                            self.plasma_mask, self.params["j_cv"], self.j_coils,
-                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-            solve(a == L, self.psi, bcs = [self.BCs])
-            
-            # Per ottimizzare potrei assemblare "A" fuori dal ciclo while:
-            '''
-            a = Picard_Varf_a( etc. etc. )
-            A = assemble(a, bcs=[self.BCs])
-            solver = LinearSolver(A,
-                  solver_parameters={'ksp_type': 'preonly',
-                                     'pc_type': 'lu'})
-            '''
-            # E poi aggiornare ad ogni iter solo b:
-            '''
-            L = Picard_varf_L( etc. etc. )
-            b = assemble(L, bcs=[self.BCs])
-            solver.solve(self.psi, b)
-            '''
+            # Update b form, which depends on the plasma shape:
+            b = form_b(self.Mesh, self.x, self.params["G"], self.phi, psi_N,
+                            self.plasma_mask, self.tags['inside limiter'])
+            # Solve the linear system for psi
+            L = assemble(b + solver_params["c"], bcs=[self.BCs])
+            solver_params["linear solver"].solve(self.psi, L)
 
         elif self.algorithm == "Marder-Weitzner":
             
             alpha = solver_params["alpha"]     # relaxation parameter:
-            psi_step = Function(self.V) # function to store intermediate step solution:
-            psi_step.assign(psi_old)
+            solver_params["psi_step"].assign(psi_old)
 
             # Compute first-step flux of Marder-Weitzner method:
-            a,L = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N,
-                            self.plasma_mask, self.params["j_cv"], self.j_coils,
-                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-            solve(a == L, psi_step, bcs = [self.BCs])
+            b1 = form_b(self.Mesh, self.x, self.params["G"], self.phi, psi_N,
+                            self.plasma_mask, self.tags['inside limiter'])
+            L1 = assemble(b1 + solver_params["c"], bcs=[self.BCs])
+            solver_params["linear solver"].solve(solver_params["psi_step"], L1)
 
             # Normalize the intermediate step flux
-            self.normalize_flux(psi_step, psi_N)
-            #self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi_step - self.psi0) / (epsilon * self.psi0)))
+            self.normalize_flux(solver_params["psi_step"], psi_N)
+            self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi - self.psi0) / (0.01 * self.psi0)))
 
             # Compute second step flux of Marder-Weitzner method:
-            a,L = Picard_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N,
-                            self.plasma_mask, self.params["j_cv"], self.j_coils,
-                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-            solve(a == L, self.psi, bcs = [self.BCs])
+            b2 = form_b(self.Mesh, self.x, self.params["G"], self.phi, psi_N,
+                            self.plasma_mask, self.tags['inside limiter'])
+            L2 = assemble(b2 + solver_params["c"], bcs=[self.BCs])
+            solver_params["linear solver"].solve(self.psi, L2)
 
             # Update flux using the Marder-Weitzner method with relaxation alpha:
-            self.psi.assign( (1-alpha) * psi_old + 2*alpha * psi_step - alpha * self.psi )
-
-        elif self.algorithm == "Newton":
-            print(f'\nValue of the denominator: {self.denom}')
-            a, L = Newton_varf(self.Mesh, self.x, self.params["G"], self.phi, self.psi_trial, psi_N, psi_old,
-                            self.denom, self.plasma_mask, self.params["j_cv"], self.j_coils,
-                            self.tags['vacuum'], self.tags['vessel'], self.tags['coils'])
-            #print("Max of residual vector F:", assemble(F).dat.data.max())
-            #print("Norm of Jacobian matrix J:", assemble(J).petscmat.norm())
-                
-            solve(a == L, self.psi, bcs = [self.BCs])
-            #self.psi.assign(self.psi + psi_old)
+            self.psi.assign( (1-alpha) * psi_old + 2*alpha * solver_params["psi_step"] - alpha * self.psi )
 
     def solve(self):
         """
@@ -296,15 +277,29 @@ class GradShafranovSolver:
             self.denom = 1
 
         # Initialize the plasma mask:
-        #self.plasma_mask.interpolate(Constant(1.0))
-        self.plasma_mask.interpolate(Constant(0.5))
+        self.plasma_mask.interpolate(Constant(1.0))
 
         epsilon = 0.01  # Smoothing parameter for the plasma mask
 
         # Define function for intermediate solution of multi-step method
         solver_params = {}
+        '''
+        if self.algorithm == "Newton":
+            # to be implemented...
+        else:
+        '''
+        # Define solver for form "a" in case of fixed-point-based method:
+        a = form_a(self.Mesh, self.x, self.phi, self.psi_trial)
+        a_ff = farfield_form(self.Mesh, self.phi, self.psi_trial, self.tags['boundary'], radius = 15)
+        A = assemble(a+a_ff, bcs=[self.BCs])
+        solver_params["linear solver"] = LinearSolver(A, solver_parameters={'ksp_type': 'preonly', 'pc_type': 'lu'})
+        # Define coil and vessel contribution term:
+        solver_params["c"] = form_c(self.Mesh, self.phi, self.j_coils, self.tags['coils'], self.params["j_cv"], self.tags['vessel'])
+ 
         if self.algorithm == "Marder-Weitzner":
-            solver_params["alpha"] = self.params.get("alpha", 0.5) # Relaxation parameter
+            solver_params["alpha"] = self.params.get("alpha", 0.5) # Relaxation parameter   
+            solver_params["psi_step"] = Function(self.V)      
+        # end of the "else" commented above once the Newton is implemented
 
         # Set up the solver parameters
         maxit = self.params.get("max_iterations", 100)
@@ -326,8 +321,9 @@ class GradShafranovSolver:
             # Normalize the poloidal flux:
             self.normalize_flux(self.psi, psi_N)
 
-            # Update the plasma mask (smoothed:
+            # Update the plasma mask (smoothed):
             self.plasma_mask.interpolate(0.5 + 0.5 * tanh((self.psi - self.psi0) / (epsilon * self.psi0)))
+            #self.plasma_mask.interpolate(conditional(self.psi > self.psi0, 1.0, 0.0))
 
             # Update psi_old and mask for the next iteration
             psi_old.assign(self.psi)
@@ -455,7 +451,7 @@ class GradShafranovSolver:
         h_min = []
 
         print('Building meshes with increasing refinement levels...')
-        meshes = MeshHierarchy(self.Mesh, refinment_levels)
+        #meshes = MeshHierarchy(self.Mesh, refinment_levels)
 
         for n in range(refinment_levels):
             self.Mesh = meshes[n]
