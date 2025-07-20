@@ -65,14 +65,18 @@ def form_c(mesh, phi, j_coils, coils_tags, j_cv, vessel_tag = None):
     return c
 
 
-def form_d(mesh, V, phi, psi, psi0, psi_max, plasma_mask, vacuum_tag, G, dG, dpsidn):
+def form_d(mesh, x, x0, V, phi, psi, psi_N, dpsidN, psi0, psi_max, G, dG, plasma_mask, Omegap_mask, vacuum_tag):
     """
-    !!!!!!!!!!!!!!!!!!!!!!!!!
-    !!! INCOMPLETE METHOD !!!
-    !!!!!!!!!!!!!!!!!!!!!!!!!
-    
-    Define the linear form c in the weak formulation of the Grad-Shafranov problem.
+    Define the bilinear form d in the Newton iteration for the weak Grad-Shafranov problem.
     Parameters:
+    - mesh: The mesh on which the problem is defined.
+    - x: the x coordinate
+    - x0: the intersection point between the limiter and the plasma boundary (or the x-point)
+    - phi: The test function.
+    - psi: the trial function
+    - psi_N: the normalized solution at the previous iteration
+    - vessel_tag: Mesh tag for the vacuum vessel wall
+    - coils_tag: Array with the mesh tags for each coil
 
     Returns
     - d: the bilinear form
@@ -89,6 +93,8 @@ def form_d(mesh, V, phi, psi, psi0, psi_max, plasma_mask, vacuum_tag, G, dG, dps
     d = plasma_mask * dG(x,psi_N) * e * phi * dx(vacuum_tag, domain = mesh)
 
     # Boundary term:
+    d += G(x,Constant(1.0)) * ( Constant(psi.at(x0)) - psi ) / dpsidN * phi * Omegap_mask * dx(vacuum_tag, domain = mesh)
+
     '''
     Add the integral over the plasma boundary of G(x,psi_N) * [psi(x0) - psi] * 1/dpsidn phi ...
     - Come calcolo un integrale di linea?

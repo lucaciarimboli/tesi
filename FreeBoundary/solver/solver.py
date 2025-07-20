@@ -290,8 +290,7 @@ class GradShafranovSolver:
         '''
         # Define solver for form "a" in case of fixed-point-based method:
         a = form_a(self.Mesh, self.x, self.phi, self.psi_trial)
-        a_ff = farfield_form(self.Mesh, self.phi, self.psi_trial, self.tags['boundary'], radius = 15)
-        A = assemble(a+a_ff, bcs=[self.BCs])
+        A = assemble(a, bcs=[self.BCs])
         solver_params["linear solver"] = LinearSolver(A, solver_parameters={'ksp_type': 'preonly', 'pc_type': 'lu'})
         # Define coil and vessel contribution term:
         solver_params["c"] = form_c(self.Mesh, self.phi, self.j_coils, self.tags['coils'], self.params["j_cv"], self.tags['vessel'])

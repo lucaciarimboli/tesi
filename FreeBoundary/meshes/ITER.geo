@@ -3,37 +3,37 @@
 //----------------------------------//
 
 lc1 = 1;    // Default for boundary/coils
-lc2 = 0.8;  // Limiter
-lc3 = 0.4;  // Limiter divertor zone
+lc2 = 0.3;  // Limiter
+lc3 = 0.1;  // Limiter divertor zone
 
 //----------------------------------//
 //	      ARTIFICIAL BOUNDARY	    //
 //----------------------------------//
 
 // RECTANGULAR BOUNDARY:
-//Point(1) = {0.01, -10, 0, lc1};
-//Point(2) = {14, -10, 0, lc1};
-//Point(3) = {14, 10, 0, lc1};
-//Point(4) = {0.01, 10, 0, lc1};
+Point(1) = {0.01, -10, 0, lc1};
+Point(2) = {14, -10, 0, lc1};
+Point(3) = {14, 10, 0, lc1};
+Point(4) = {0.01, 10, 0, lc1};
 
-//Line(1) = {1,2};
-//Line(2) = {2,3};
-//Line(3) = {3,4};
-//Line(4) = {4,1};
+Line(1) = {1,2};
+Line(2) = {2,3};
+Line(3) = {3,4};
+Line(4) = {4,1};
 
-//Line Loop(1) = {1,2,3,4};
+Line Loop(1) = {1,2,3,4};
 
-// SEMI-CIRCULAR BOUNDARY:
-Point(1) = {0, -15, 0, lc1};
-Point(2) = {0, 0, 0, lc1};
-Point(3) = {0, 15, 0, lc1};
-Point(4) = {15, 0, 0, lc1};
+// SEMI-CIRCULAR BOUNDARY FOR ABB CONDITIONS:
+//Point(1) = {0, -15, 0, lc1};
+//Point(2) = {0, 0, 0, lc1};
+//Point(3) = {0, 15, 0, lc1};
+//Point(4) = {15, 0, 0, lc1};
 
-Line(1) = {1, 3};
-Circle(2) = {3, 2, 4};
-Circle(3) = {4, 2, 1}; 
+//Line(1) = {1, 3};
+//Circle(2) = {3, 2, 4};
+//Circle(3) = {4, 2, 1}; 
 
-Curve Loop(1) = {1, 2, 3};
+//Curve Loop(1) = {1, 2, 3};
 
 //----------------------------------//
 //	            LIMITER	            //
@@ -283,6 +283,12 @@ Physical Curve("Coil 12", 23) = {151, 152, 153, 154};
 // Passive structures just for the plot:
 // Physical Curve("Vessel Inn",24) = {201:234};
 // Physical Curve("Vessel Out",25) = {301:332};
+
+// Physical lines for each boundary line to impose Neumann BCs:
+Physical Curve("South Boundary", 26) = {1};
+Physical Curve("East Boundary", 27) = {2};
+Physical Curve("North Boundary", 28) = {3};
+Physical Curve("West Boundary", 29) = {4};
 
 //----------------------------------//
 //	        GENERATE MESH	        //
