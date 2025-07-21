@@ -191,10 +191,11 @@ class GradShafranovSolver:
         self.psi_max = psi.vector().max()
 
         # Compute the flux value at the plasma boundary:
-        if isinstance(self.limiter[0], tuple):
-            self.psi0 = max(psi.at(pt) for pt in self.limiter)
-        else:
-            self.psi0 = max(psi.dat.data[self.limiter])
+        #if isinstance(self.limiter[0], tuple):
+        #    self.psi0 = max(psi.at(pt) for pt in self.limiter)
+        #else:
+        #    self.psi0 = max(psi.dat.data[self.limiter])
+        self.psi0 = max(psi.dat.data[self.limiter])
  
         # Normalize the poloidal flux:       
         denominator = self.psi_max - self.psi0
