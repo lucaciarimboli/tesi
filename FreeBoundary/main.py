@@ -100,8 +100,9 @@ if __name__ == "__main__":
     
     start_time = time.time()
 
-    print('\nSOLVING WITH FIXED POINT:\n')
+    print('\nSOLVING WITH FIXED POINT:')
     params["algorithm"] = "Picard"
+    params["max_iterations"] = 50
     solver = GradShafranovSolver(params)
     solver.display_mesh()
     solver.solve()
@@ -188,6 +189,31 @@ if __name__ == "__main__":
     #params["algorithm"] = "Picard"
     params["algorithm"] = "Marder-Weitzner"
     params["alpha"] = 0.4 # relaxation parameter
+
+    solver = GradShafranovSolver(params)
+    solver.solve()
+
+    # Use the result as initial guess for Newton method:
+    solver.set_iterations_params(max_iterations=1000, tolerance=params["tolerance"], verbose=True)
+    solver.set_algorithm("Picard")
+    solver.set_initial_guess(initial_guess=solver.psi)
+
+    # Solve using Newton method starting from a closer psi_initial:
+    solver.solve()
+    solver.plot_flux()
+'''
+
+#--------------------------------------------------#
+#     SOME HOMOGENEOUS DIRICHLET ITERATIONS        #
+#--------------------------------------------------#
+'''
+if __name__ == "__main__":
+
+    # Perform some Picard iterations:
+    params["max_iterations"] = 10
+    #params["algorithm"] = "Picard"
+    params["algorithm"] = "Marder-Weitzner"
+    #params["alpha"] = 0.4 # relaxation parameter
 
     solver = GradShafranovSolver(params)
     solver.solve()

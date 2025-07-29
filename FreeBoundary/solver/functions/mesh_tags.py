@@ -28,6 +28,8 @@ def get_tags(geometry, params=None):
         tags['limiter'] = 16
         tags['inside limiter'] = 2
         tags['coils'] = [3,4,5,6,7,8,9,10,11,12,13,14]
+        # tags['Gamma Neumann'] = 26
+        # tags['Gamma Dirichlet'] = 27
 
     elif geometry == "custom":
         tags['boundary'] = 0

@@ -271,6 +271,8 @@ Physical Surface("Coil 11",13) = {13};
 Physical Surface("Coil 12",14) = {14};
 
 Physical Curve("Boundary",15) = {1,2,3,4};
+// Physical Curve("Gamma_N",26) = {1,2,3};
+// Physical Curve("Gamma_D",27) = {4};
 Physical Curve("Limiter",16) = {11:42};
 Physical Curve("Solenoid",17) = {101,121,122,123,124,125,126,107,116,115,114,113,112,111};
 Physical Curve("Coil 7", 18) = {131, 132, 133, 134};
@@ -284,11 +286,6 @@ Physical Curve("Coil 12", 23) = {151, 152, 153, 154};
 // Physical Curve("Vessel Inn",24) = {201:234};
 // Physical Curve("Vessel Out",25) = {301:332};
 
-// Physical lines for each boundary line to impose Neumann BCs:
-Physical Curve("South Boundary", 26) = {1};
-Physical Curve("East Boundary", 27) = {2};
-Physical Curve("North Boundary", 28) = {3};
-Physical Curve("West Boundary", 29) = {4};
 
 //----------------------------------//
 //	        GENERATE MESH	        //

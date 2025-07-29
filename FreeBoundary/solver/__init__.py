@@ -3,7 +3,7 @@ from .functions.geometry import generate_mesh
 from .functions.mesh_tags import get_tags
 from .functions.varf import form_a, form_b, form_c, form_d
 from .functions.coils import compute_j_coils
-from .functions.ABB_conditions import farfield_form
+from .functions.boundary_conditions import JN_coupling_BCs
 
 __all__ = [
     "GradShafranovSolver",
@@ -13,5 +13,6 @@ __all__ = [
     "form_b",
     "form_c",
     "form_d",
-    "compute_j_coils"
+    "compute_j_coils",
+    "JN_coupling_BCs"
 ]

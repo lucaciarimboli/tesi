@@ -4,7 +4,7 @@ from .functions.geometry import generate_mesh
 from .functions.mesh_tags import get_tags
 from .functions.varf import form_a, form_b, form_c, form_d
 from .functions.coils import compute_j_coils
-from .functions.ABB_conditions import farfield_form
+from .functions.boundary_conditions import JN_coupling_BCs
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,8 +23,8 @@ class GradShafranovSolver:
         self.params = params
 
         # Initialize the mesh and function spaces
-        #self.build_mesh()
-        self.Mesh = params["mesh"]   # X NOTEBOOK -> RIPRISTINARE build_mesh()
+        self.build_mesh()
+        #self.Mesh = params["mesh"]
         self.Mesh.init()
         self.function_spaces()
 
@@ -34,9 +34,6 @@ class GradShafranovSolver:
             self.tags = get_tags(geometry, params)
         else:
             self.tags = get_tags(geometry)
-
-        # Set boundary conditions
-        self.BCs = DirichletBC(self.V, 0.0, self.tags['boundary'])
 
         # Extract the nodes that lie on the limiter:
         if self.tags['limiter'] is not None:
@@ -51,6 +48,16 @@ class GradShafranovSolver:
         
         # Compute the coils current density:
         self.j_coils = compute_j_coils(self.Mesh, self.tags['coils'], params["I"])
+
+        # Set boundary conditions
+        # self.BCs = DirichletBC(self.V, 0.0, self.tags['boundary'])
+        bcs_params = {
+            'V': self.V,
+            'coils j': self.j_coils,
+            'coils tag': self.tags['coils'],
+            'boundary tag': self.tags['boundary']
+        }
+        self.BCs = JN_coupling_BCs(bcs_params)
 
         self.converged = False
         self.set_algorithm(params.get("algorithm", "Picard"))  # Default algorithm is Picard
@@ -110,7 +117,6 @@ class GradShafranovSolver:
 
 
     # METHODS FOR THE CONSTRUCTOR:
-    '''
     def build_mesh(self):
         """
         Set the mesh for the Grad-Shafranov problem.
@@ -151,7 +157,7 @@ class GradShafranovSolver:
             #    raise FileNotFoundError(f"Mesh file {path} does not exist.")
             #else: 
             self.Mesh = Mesh(path, dim = 2, distribution_parameters={"partition": False}, reorder = True)
-    '''
+
     def function_spaces(self, family=None, degree=None):
         """
         Define the function spaces for the Grad-Shafranov problem.
@@ -230,11 +236,28 @@ class GradShafranovSolver:
             b = form_b(self.Mesh, self.x, self.params["G"], self.phi, psi_N,
                             self.plasma_mask, self.tags['inside limiter'])
             # Solve the linear system for psi
-            L = assemble(b + solver_params["c"], bcs=[self.BCs])
-            solver_params["linear solver"].solve(self.psi, L)
+            #L = assemble(b + solver_params["c"], bcs=[self.BCs])
+            L = b + solver_params["c"] - solver_params["neumann"]
+            a = solver_params["a"]
+            solve(a==L,self.psi,nullspace=solver_params["ns"])
 
-        elif self.algorithm == "Marder-Weitzner":
+            # Neumann problem solution defined after a constant:
+            const = self.psi.at(0.01,7)
+            self.psi.dat.data[:] -= const
             
+            #solve(a==L,self.psi,bcs=solver_params["dirichlet"])
+            #solver_params["linear solver"].solve(self.psi, L)
+
+        
+        elif self.algorithm == "Marder-Weitzner":
+            # TEMPORARELY MODIFIED TO PERFORM FIXED POINT ITERATION WITH HOMOGENEOUS DIRICHLET:
+            # Update b form, which depends on the plasma shape:
+            b = form_b(self.Mesh, self.x, self.params["G"], self.phi, psi_N,
+                            self.plasma_mask, self.tags['inside limiter'])
+            L = b + solver_params["c"]
+            a = solver_params["a"]
+            solve(a==L,self.psi,bcs=[DirichletBC(self.V,0.0,self.tags['boundary'])])
+        '''    
             alpha = solver_params["alpha"]     # relaxation parameter:
             solver_params["psi_step"].assign(psi_old)
 
@@ -256,7 +279,7 @@ class GradShafranovSolver:
 
             # Update flux using the Marder-Weitzner method with relaxation alpha:
             self.psi.assign( (1-alpha) * psi_old + 2*alpha * solver_params["psi_step"] - alpha * self.psi )
-
+        '''
     def solve(self):
         """
         Solve the Grad-Shafranov problem.
@@ -290,15 +313,19 @@ class GradShafranovSolver:
         else:
         '''
         # Define solver for form "a" in case of fixed-point-based method:
-        a = form_a(self.Mesh, self.x, self.phi, self.psi_trial)
-        A = assemble(a, bcs=[self.BCs])
-        solver_params["linear solver"] = LinearSolver(A, solver_parameters={'ksp_type': 'preonly', 'pc_type': 'lu'})
+        #a = form_a(self.Mesh, self.x, self.phi, self.psi_trial)
+        #A = assemble(a, bcs=[self.BCs])
+        #solver_params["linear solver"] = LinearSolver(A, solver_parameters={'ksp_type': 'preonly', 'pc_type': 'lu'})
+        solver_params["a"] = form_a(self.Mesh, self.x, self.phi, self.psi_trial)
         # Define coil and vessel contribution term:
         solver_params["c"] = form_c(self.Mesh, self.phi, self.j_coils, self.tags['coils'], self.params["j_cv"], self.tags['vessel'])
+        solver_params["neumann"] = self.BCs.linear_form(psi_old)    # JN boundary conditions
+        solver_params["ns"] = VectorSpaceBasis(constant=True)
+        #solver_params["dirichlet"] = [DirichletBC(self.V, 0.0, self.tags['Gamma Dirichlet'])]
  
-        if self.algorithm == "Marder-Weitzner":
-            solver_params["alpha"] = self.params.get("alpha", 0.5) # Relaxation parameter   
-            solver_params["psi_step"] = Function(self.V)      
+        #if self.algorithm == "Marder-Weitzner":
+        #    solver_params["alpha"] = self.params.get("alpha", 0.5) # Relaxation parameter   
+        #    solver_params["psi_step"] = Function(self.V)      
         # end of the "else" commented above once the Newton is implemented
 
         # Set up the solver parameters
@@ -327,6 +354,9 @@ class GradShafranovSolver:
 
             # Update psi_old and mask for the next iteration
             psi_old.assign(self.psi)
+
+            # Update BC term:
+            solver_params["neumann"] = self.BCs.linear_form(psi_old)
 
             # Print iteration information
             if(self.params.get("verbose", False)):
