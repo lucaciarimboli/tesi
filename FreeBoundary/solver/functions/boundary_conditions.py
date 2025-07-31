@@ -43,7 +43,6 @@ class JN_coupling_BCs:
         self.coils_j = params['coils j']
         self.coils_tag = params['coils tag']
         self.boundary_tag = params['boundary tag']
-        # self.GammaN_tag = params['GammaN tag']
 
         # Create 1D mesh on the boundary:
         m2d = V.mesh()
@@ -183,7 +182,7 @@ class JN_coupling_BCs:
                 G.dat.data[j] = Green_function(X[0],X[1],Y[0],Y[1])
 
             # Fix inf value in the point source:
-            G.dat.data[dof_idx] = 1e-7 # Values of G are of the order of 10^-6/10^-7
+            G.dat.data[dof_idx] = 1e3 # Values of G are of the order of 10^-6/10^-7
             self.G_list.append(G)
 
             # Problema: K_func contiene tutti "nan" ed L_func tutti 0. Quindi potrebbe esserci un problema nella Green function!!
@@ -275,8 +274,8 @@ class JN_coupling_BCs:
         #    print(f'Value of V(q) = {Vq.dat.data_ro[i]}, Computed integral: {computed_Vq}')
 
         # TEST FOR q:
-        #q_integral = assemble(self.q * ds(self.boundary_tag))   # l'integrale di q è circa 0 solo alla prima iterazione!
-        #print(f'Integrale di q su tutto il bordo: {q_integral}')
+        q_integral = assemble(self.q * ds(self.boundary_tag))   # l'integrale di q è circa 0 solo alla prima iterazione!
+        print(f'Integrale di q su tutto il bordo: {q_integral}')
 
 
     def linear_form(self,psi_old):

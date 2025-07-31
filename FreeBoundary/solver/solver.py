@@ -50,14 +50,16 @@ class GradShafranovSolver:
         self.j_coils = compute_j_coils(self.Mesh, self.tags['coils'], params["I"])
 
         # Set boundary conditions
-        # self.BCs = DirichletBC(self.V, 0.0, self.tags['boundary'])
-        bcs_params = {
+        #self.BCs = DirichletBC(self.V, 0.0, self.tags['boundary'])
+        #self.BCs = DirichletBC(self.V, 0.0, self.tags['Gamma Dirichlet'])
+        BEM_params = {
             'V': self.V,
             'coils j': self.j_coils,
             'coils tag': self.tags['coils'],
+            #'boundary tag': self.tags['Gamma Neumann']
             'boundary tag': self.tags['boundary']
         }
-        self.BCs = JN_coupling_BCs(bcs_params)
+        self.BEM = JN_coupling_BCs(BEM_params)
 
         self.converged = False
         self.set_algorithm(params.get("algorithm", "Picard"))  # Default algorithm is Picard
@@ -239,13 +241,13 @@ class GradShafranovSolver:
             #L = assemble(b + solver_params["c"], bcs=[self.BCs])
             L = b + solver_params["c"] - solver_params["neumann"]
             a = solver_params["a"]
+            #solve(a==L,self.psi,bcs=[self.BCs])
             solve(a==L,self.psi,nullspace=solver_params["ns"])
 
             # Neumann problem solution defined after a constant:
             const = self.psi.at(0.01,7)
             self.psi.dat.data[:] -= const
             
-            #solve(a==L,self.psi,bcs=solver_params["dirichlet"])
             #solver_params["linear solver"].solve(self.psi, L)
 
         
@@ -319,7 +321,7 @@ class GradShafranovSolver:
         solver_params["a"] = form_a(self.Mesh, self.x, self.phi, self.psi_trial)
         # Define coil and vessel contribution term:
         solver_params["c"] = form_c(self.Mesh, self.phi, self.j_coils, self.tags['coils'], self.params["j_cv"], self.tags['vessel'])
-        solver_params["neumann"] = self.BCs.linear_form(psi_old)    # JN boundary conditions
+        solver_params["neumann"] = self.BEM.linear_form(psi_old)    # JN boundary conditions
         solver_params["ns"] = VectorSpaceBasis(constant=True)
         #solver_params["dirichlet"] = [DirichletBC(self.V, 0.0, self.tags['Gamma Dirichlet'])]
  
@@ -356,7 +358,7 @@ class GradShafranovSolver:
             psi_old.assign(self.psi)
 
             # Update BC term:
-            solver_params["neumann"] = self.BCs.linear_form(psi_old)
+            solver_params["neumann"] = self.BEM.linear_form(psi_old)
 
             # Print iteration information
             if(self.params.get("verbose", False)):
