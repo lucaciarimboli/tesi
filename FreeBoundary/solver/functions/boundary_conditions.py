@@ -269,13 +269,13 @@ class JN_coupling_BCs:
             self.q.dat.data[dof_idx] = q_vec[i]  # q!=0 only on boundary dofs
 
         # TEST FOR MATRIX:
-        #for i in range(N):
-        #    computed_Vq = assemble(self.G_list[i] * self.q * ds(self.boundary_tag))
-        #    print(f'Value of V(q) = {Vq.dat.data_ro[i]}, Computed integral: {computed_Vq}')
+        for i in range(N):
+            computed_Vq = assemble(self.G_list[i] * self.q * ds(self.boundary_tag))
+            print(f'Value of V(q) = {Vq.dat.data_ro[i]}, Computed integral: {computed_Vq}')
 
         # TEST FOR q:
-        q_integral = assemble(self.q * ds(self.boundary_tag))   # l'integrale di q è circa 0 solo alla prima iterazione!
-        print(f'Integrale di q su tutto il bordo: {q_integral}')
+        #q_integral = assemble(self.q * ds(self.boundary_tag))   # l'integrale di q è circa 0 solo alla prima iterazione!
+        #print(f'Integrale di q su tutto il bordo: {q_integral}')
 
 
     def linear_form(self,psi_old):
