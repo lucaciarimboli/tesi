@@ -14,12 +14,13 @@ class Plasma:
         a mask for the plasma region and one for the plasma boundary
     '''
 
-    def __init__(self,V,limiter_tag):
+    def __init__(self,V,limiter_tag,vacuum_tag):
         '''
             @brief Constructor.
 
             @param V: Function Space
             @param limiter_tag: Mesh tag for the limiter nodes
+            @param vacuum_tag: Mesh tag for the vacuum nodes
             @TODO modify so that the constructor handles whatever initial condition
             (means remove initalization here and take care of it in the solver)
         '''
@@ -33,6 +34,9 @@ class Plasma:
 
         # Store the list of limiter nodes:
         self.limiter = DirichletBC(V, 0.0, limiter_tag).nodes
+
+        # Extract the set of dof that lie in the vacuum region:
+        v = Function(V).assign()
 
         # Initialize all plasma values:
         self.psi0 = 0.0

@@ -68,7 +68,7 @@ class GradShafranovSolver:
         # Define object for plotting the results:
         if params.get('show_plots',False):
             self.plots_flag = True
-            self.plotter = Plot(self.m, geometry)
+            self.plot = Plot(self.m, geometry)
         else:
             self.plots_flag = False
 
@@ -141,7 +141,7 @@ class GradShafranovSolver:
         if not os.path.exists(path):
             raise FileNotFoundError(f"Mesh file {path} does not exist.")
         else: 
-            print(f"\nLoading mesh for {geometry} geometry ...")
+            print(f"\nLoading mesh for {geometry} geometry ...\n")
             self.m = Mesh(path, dim = 2, distribution_parameters={"partition": False}, reorder = True)
             self.m.init()
 
@@ -180,8 +180,10 @@ class GradShafranovSolver:
         # Initialize solver:
         if self.algorithm == "Picard":
             solver = Picard(self.V,self.data,self.tags,self.bcs)
+            print("Using fixed point iterations...\n")
         else:
             solver = Newton(self.V,self.data,self.tags,self.bcs)
+            print("Using Newton's method...\n")
 
         # For bem boundary conditions
         #solver_params["neumann"] = self.BEM.linear_form(psi_old)    # JN boundary conditions
@@ -237,8 +239,6 @@ class GradShafranovSolver:
             print(f"Solver did not converge after {self.maxit} iterations. Final H1 Error = {self.err:.6e}\n")
         else:
             print(f"Solver converged in {it} iterations. Final H1 Error = {self.err:.6e}\n")
-            if self.plots_flag:
-                self.plot_flux()
 
 
     # PLOT METHODS:
@@ -254,4 +254,4 @@ class GradShafranovSolver:
         Plot the flux function psi.
         This method saves a contour plot of the flux function in the results directory.
         """
-        self.plot.flux(self.psi)
+        self.plot.flux(self.psi, self.plasma.psi0)

@@ -16,6 +16,12 @@ Point(2) = {14, -10, 0, lc1};
 Point(3) = {14, 10, 0, lc1};
 Point(4) = {0.01, 10, 0, lc1};
 
+// HUGE RECTANGULAR BOUNDARY
+//Point(1) = {0.01, -30, 0, lc1};
+//Point(2) = {50, -30, 0, lc1};
+//Point(3) = {50, 30, 0, lc1};
+//Point(4) = {0.01, 30, 0, lc1};
+
 Line(1) = {1,2};
 Line(2) = {2,3};
 Line(3) = {3,4};

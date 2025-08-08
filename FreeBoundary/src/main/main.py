@@ -37,27 +37,30 @@ def dGdpsiN(R, psiN):
 #'I': [-8.208e5, -8.621e4, 2.783e6, 1.703e6, -6.491e5, -7.971e5, -2.026e6, -2.508e6, -2.15e6, -1.874e6, -3.607e6, -2.303e6],
 
 # Divertor configuration:
-#'I': [-1.4e6, -9.5e6, -2.04e7, -2.04e7, -1.0e7, 3.6e6, 5.5e6, -2.3e6, -6.5e6, -4.8e6, -7.5e6, 1.73e7],
+#'I': [-1.4e6, -9.5e6, -2.04e7, -2.04e7, -1.0e7, 3.6e6, 5.5e6, -2.3e6, -6.5e6, -4.8e6, -7.5e6, 1.73e7], --> non funzion
+#'I': [ -2.848113e3, -2.205664e+04, -3.022037e4, -3.022037e4, -2.478694e4, 1.143284e3,
+#   -4.552585e6, 3.180596e6, 5.678096e6, 3.825538e6, 1.066498e7, -2.094771e7 ],   # da paper serino
 
 params = {
     # Tokamak geometry:
     'geometry': "ITER",
 
     # Currents configuration:
-    'I': [-1.4e6, -9.5e6, -2.04e7, -2.04e7, -1.0e7, 3.6e6, 5.5e6, -2.3e6, -6.5e6, -4.8e6, -7.5e6, 1.73e7],
-    'j_cv': 0.0,               
+    'I': [ -2.848113e3, -2.205664e+04, -3.022037e4, -3.022037e4, -2.478694e4, 1.143284e3,
+        -4.552585e6, 3.180596e6, 5.678096e6, 3.825538e6, 1.066498e7, -2.094771e7 ],
+    'j_cv': 0.0,
     'j_plasma': G,
     'j_plasma_derivative': dGdpsiN, # needed only for Newton iterations
 
     # Algorithm parameters:
     'max_iterations': 1000,
-    'tolerance': 1e-5,
+    'tolerance': 1e-8,
     'verbose': True,
-    'show_plots': False,
-    'algorithm': "Newton",
+    'show_plots': True,
+    'algorithm': "Picard",
 
     # Initial guess for the flux function:
-    'initial_guess': Constant(0.0)
+    'initial_guess': Constant(0.01) # to avoid infinite normalized error at first iteration
 }
 
 #--------------------------------------------------#
@@ -66,15 +69,17 @@ params = {
 
 if __name__ == "__main__":
     
-    start_time = time.time()
     solver = GradShafranovSolver(params)
+    solver.plot_mesh()
+    start_time = time.time()
 
     #solver.set_algorithm("Picard")
-    #solver.set_iterations_params(5, params['tolerance'], params['verbose'])
+    #solver.set_iterations_params(3, params['tolerance'], params['verbose'])
     solver.solve()
 
     #solver.set_algorithm("Newton")
-    #solver.set_iterations_params(params['max_iterations'], params['tolerance'], params['verbose'])
+    #solver.set_iterations_params(30, 1e-1000, params['verbose'])
+    #solver.set_currents(j_cv = 0.0, I = [-1.4e6,-9.5e6,-2.04e7,-2.04e7,-1.0e7,3.6e6,5.5e5,-2.3e6,-6.5e6,-4.8e6,-7.5e6,1.73e6])
     #solver.solve()
 
     end_time = time.time()
@@ -82,3 +87,4 @@ if __name__ == "__main__":
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
     print(f"Simulation ended in {minutes} min. and {seconds} sec.")
+    solver.plot_flux()
