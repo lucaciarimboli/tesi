@@ -1,6 +1,7 @@
 from firedrake import *
+import numpy as np
 
-def compute_j_coils(mesh, tags, I):
+def compute_j_coils(m, tags, I):
     """
     Compute the current density flowing in each coil. The current density j is given by I / S,
     the surface is computed by Lebesgue measure using numerical integration. 
@@ -15,16 +16,15 @@ def compute_j_coils(mesh, tags, I):
     """
     
     j_coils = []
-
     coils_number = len(I)
 
-    for n in range(0,coils_number - 1):
+    for n in range(coils_number):
 
         # Compute coil section size:
-        S = assemble(Constant(1.0) * dx(tags[n],domain=mesh))
+        S = assemble(Constant(1.0) * dx(tags[n],domain=m))
 
         # Append coil current density
         j_coils.append( I[n] / S)
     
-    return j_coils
+    return np.array(j_coils)
         
