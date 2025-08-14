@@ -36,14 +36,21 @@ class Plasma:
         self.limiter = DirichletBC(V, 0.0, limiter_tag).nodes
 
         # Extract the set of dof that lie in the vacuum region:
-        v = Function(V).assign()
+        v = TestFunction(V)
+        vacuum_vector = assemble(v * dx(vacuum_tag))
+        vacuum_vector.dat.data[self.limiter] = 0.0  # exclude boundary points
+        self.vacuum = np.where(vacuum_vector.dat.data_ro > 0.0)[0]
 
         # Initialize all plasma values:
         self.psi0 = 0.0
-        self.psi_ax = -1.0
-        self.x0_idx = np.array([0])
-        self.x1_idx = np.array([0])
+        self.psi_ma = -1.0
+        self.x0_idx = self.limiter[len(self.limiter) // 5]  # Take some index in limiter region
+        self.x1_idx = self.vacuum[len(self.vacuum) // 5]    # Take some index in vacuum region
         self.n = Function(VectorFunctionSpace(V.mesh(), "Lagrange", 1, dim=2)).interpolate(as_vector((0.0, 0.0)))
+
+
+        # For plotting saddle points for debugging:
+        self.psi_X_point = 0.0
 
 
     def build_neighbors_map(self, V):
@@ -71,12 +78,13 @@ class Plasma:
         self.neighbors_map = []
         m = V.mesh()
         coord_func = Function(VectorFunctionSpace(m, "CG", 1)).interpolate(as_vector(SpatialCoordinate(m)))
+        self.coords = coord_func.dat.data_ro[:]
 
         for idx, neighbors_set in enumerate(neighbors_map):
             neighbors_array = np.array(list(neighbors_set))
 
-            node_coords = coord_func.dat.data_ro[idx]
-            neighbor_coords = coord_func.dat.data_ro[neighbors_array]
+            node_coords = self.coords[idx]
+            neighbor_coords = self.coords[neighbors_array]
 
             dx = neighbor_coords[:, 0] - node_coords[0]
             dy = neighbor_coords[:, 1] - node_coords[1]
@@ -115,38 +123,68 @@ class Plasma:
 
         return counter > 3  
 
-    
-    def identify_psi0(self,psi_data):
+
+    def identify_boundary(self,psi_data):
         '''
         @param psi: flux function
 
         Identifies the value at the plasma-boundary contour line as the greatest among:
-            - the value of psi at every limiter point
             - the value of psi at every saddle point
-        The array self.saddle_points is filled with all the saddle points that lie on the 
-        plasma boundary (contour line psi = psi0), or leaved empty if the plasma boundary
-        is tangent to the limiter
+            - the value of psi at the limiter points which are not in the shadow of a saddle
+
+        To roughly select the limiter points which are not in the shadow of an x-point,
+        the domain is divided in four quadrants w.r.t. the position of the magnetic axis.
+        The limiter points that are in any quadrant that contains an x-point are considered
+        in its shadow.
+        @TODO: a more accurate criterion for the limiter points selection.
         '''
 
-        limiter_data = psi_data[self.limiter]
-        self.x0_idx = self.limiter[np.argmax(limiter_data)]
-        self.psi0 = max(limiter_data)
+        # Look for saddle points in the vacuum region:
+        saddle_points = np.array([idx for idx in self.vacuum if self.is_saddle_point(psi_data, idx)])
 
-        # Extract nodes s.t. psi>psi0
-        internal_dof_idx = np.where(psi_data > self.psi0)[0] 
+        if len(saddle_points) > 0:
+            # Candidate X-point is the saddle with largest flux:
+            self.x0_idx = saddle_points[np.argmax(psi_data[saddle_points])]
+            self.psi0 = psi_data[self.x0_idx]
 
-        # Identify saddle points inside the region psi>psi0
-        saddle_pts = np.array([idx for idx in internal_dof_idx if self.is_saddle_point(psi_data, idx)])
+            #---------------------------#
+            #-------- FOR DEBUG --------#
+            self.psi_X_point = list(psi_data[saddle_points])
+            #---------------------------#
+            #---------------------------#
 
-        # Update psi0 if there is an X-points configuration:
-        if len(saddle_pts) > 0:
-            self.psi0 = max(psi_data[saddle_pts])
-            self.saddle_points = saddle_pts[psi_data[saddle_pts]==self.psi0]
+            # Identify limiter points NOT in the shadow of an x-point:
+            lim_not_shadow = self.limiter.copy()
+            x1 = self.coords[self.x1_idx]    # magnetic axis coordinates
+            for sp in saddle_points:
+                X = self.coords[sp]  # x-point coordinates
+                quadrant = np.sign(X - x1)
+                lim_not_shadow = np.array([
+                    idx for idx in lim_not_shadow
+                    if np.any(np.sign(self.coords[idx] - x1) != quadrant)
+                ])
+
+            if len(lim_not_shadow) > 0:
+                limiter_idx = lim_not_shadow[np.argmax(psi_data[lim_not_shadow])]
+                limiter_psi = psi_data[limiter_idx]
+
+                # Compare flux value to find psi0:            
+                if limiter_psi > self.psi0:
+                    self.x0_idx = limiter_idx
+                    self.psi0 = limiter_psi
+
         else:
-            self.saddle_points = np.array([])
+            # If there are no saddles, take the limiter point where psi is maximum
+            self.x0_idx = self.limiter[np.argmax(psi_data[self.limiter])]
+            self.psi0 = psi_data[self.x0_idx]
         
+        #---------------------------#
+        #-------- FOR DEBUG --------#
+            self.psi_X_point = [self.psi0]
+        #---------------------------#
+        #---------------------------#
 
-    def compute_intersections(self,psi_data,dof_coords,idx):
+    def compute_intersections(self,psi_data,dof_coords):
         '''
             Computes the points in which the contour line psi = self.psi0 intersect
             triangles edges.
@@ -160,7 +198,7 @@ class Plasma:
 
         # Explore mesh starting from the magnetic axis
         intersections = []
-        queue = {idx}
+        queue = {self.x1_idx}
         visited = set()
 
         while queue:
@@ -181,7 +219,7 @@ class Plasma:
                     p2 = dof_coords[neighbor]
                     pt = interpolate_edge(p1, p2, f1, f2, c)
                     intersections.append(pt)
-                elif neighbor in self.saddle_points:
+                elif neighbor == self.x0_idx:
                     # because "visited" at the end of the loop is the set of dofs inside inside the contour line
                     # so even if the saddle point it is not actually visited, it is added to include in the set
                     # of dofs inside the plasma boundary
@@ -191,17 +229,37 @@ class Plasma:
                     queue.add(neighbor)
 
         return np.array(intersections), np.array(list(visited))
+    
+
+    def identify_magnetic_axis(self, psi_data, idx):
+        '''
+        Function to identify the magnetic axis, using a recursive
+        hill-climbing algorithm
+        '''
+        # psi value at candidate magnetic axis
+        psi_ma = psi_data[idx]
+
+        # max psi value among neighbors
+        neighbors_idx = np.array([
+            ni for ni in self.neighbors_map[idx]
+            if ni not in self.limiter   # avoid crossing
+        ])
+        next_idx = neighbors_idx[np.argmax(psi_data[neighbors_idx])]
+
+        # Stop search if idx is local maximum
+        if psi_data[next_idx] > psi_ma:
+            self.identify_magnetic_axis(psi_data, next_idx)
+        else:
+            self.x1_idx = idx
+            self.psi_ma = psi_data[idx]
 
 
     def update(self,psi):
         '''
             Update the plasma boundary masks provided the current flux solution psi
             @params psi: flux function
-            
-            @TODO: Modify the criterion of the masks so that the width of the
-                plasma boundary mask and the smoothness coeff of the plasma mask depend on the
-                mesh size h.
-                Currently the width is fixed to "2" and the smoothness is "epsilon"
+
+            @return signed distance function to allow plotting the plasma boundary
         '''
 
         psi_data = psi.dat.data_ro[:]
@@ -209,28 +267,29 @@ class Plasma:
         m = V.mesh()
 
         # Identify the value of psi at the plasma boundary and at the magnetic axis
-        self.identify_psi0(psi_data)
-        self.x1_idx = np.argmax(psi_data) # magnetic axis index(es)
-        self.psi_ax = max(psi_data)
+        # self.x1_idx = self.vacuum[np.argmax(psi_data[self.vacuum])]
+        #self.psi_ma = psi_data[self.x1_idx]
+        self.identify_magnetic_axis(psi_data, self.x1_idx)
+        self.identify_boundary(psi_data)
 
         # Extract coordinates of DOFs
         coord_func = Function(VectorFunctionSpace(m, "CG", 1)).interpolate(as_vector(SpatialCoordinate(m)))
         dof_coords = coord_func.dat.data_ro[:]
 
         # Define an unsigned distance function from the plasma boundary:
-        level_pts, inside_dofs = self.compute_intersections(psi_data, dof_coords, self.x1_idx)
+        level_pts, inside_dofs = self.compute_intersections(psi_data, dof_coords)
         tree = cKDTree(level_pts)
-        d = Function(V)
+        self.d = Function(V)
         for i, pt in enumerate(dof_coords):
             dist, _ = tree.query(pt)
-            d.dat.data[i] = dist
+            self.d.dat.data[i] = dist
 
         # Using the unsigned distance, define a mask for the plasma boundary:
-        self.boundary_mask.assign(delta_line(d))
+        self.boundary_mask.assign(delta_line(self.d))
 
         # Using the unsigned distance, define the normal vector on the plasma boundary (defined everywhere)
-        self.n = Function(VectorFunctionSpace(m, "Lagrange", 1, dim=2)).interpolate(grad(d))
+        self.n = Function(VectorFunctionSpace(m, "Lagrange", 1, dim=2)).interpolate(grad(self.d))
 
         # Convert the distance function to signed, by changing sign at the dofs marked as inside the plasma:
-        d.dat.data[inside_dofs] *= -1
-        self.domain_mask.assign(heaviside(d))
+        self.d.dat.data[inside_dofs] *= -1
+        self.domain_mask.assign(heaviside(self.d))

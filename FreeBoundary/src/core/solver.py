@@ -35,7 +35,7 @@ class GradShafranovSolver:
         self.psi = Function(self.V).interpolate(params.get('initial_guess', Constant(0.0)))
 
         # Initialize plasma masks and values
-        self.plasma = Plasma(self.V,self.tags['limiter'])
+        self.plasma = Plasma(self.V,self.tags['limiter'],self.tags['vacuum'])
 
         # Compute the coils current density:
         j_coils = compute_j_coils(self.m, self.tags['coils'], params["I"])
@@ -44,7 +44,7 @@ class GradShafranovSolver:
         self.data = {
             'G': params['j_plasma'],
             'j_coils': j_coils,
-            'j_cv': params['j_cv'],
+            'j_cv': params.get('j_cv', 0.0),
             'dGdpsiN': params.get('j_plasma_derivative',None)
         }
 
@@ -157,15 +157,12 @@ class GradShafranovSolver:
 
         @param psi_N: The normalized poloidal flux function to be updated.
         """
-        psi_ax = self.plasma.psi_ax
-        psi0 = self.plasma.psi0
- 
         # Normalize the poloidal flux:       
-        denominator = psi_ax - psi0
+        denominator = self.plasma.psi_ma - self.plasma.psi0
         if denominator < 1e-14: # Avoid division by zero
             psi_N.assign(Constant(0.0))
         else:
-            psi_N.interpolate((psi_ax - self.psi) / denominator)
+            psi_N.interpolate((self.plasma.psi_ma - self.psi) / denominator)
 
     def solve(self):
         """
@@ -192,12 +189,12 @@ class GradShafranovSolver:
 
         # Set up the solver parameters
         it = 0
-        self.converged = False
+        converged = False
 
         # Start .pvd file to store the solution
         outfile = VTKFile("./results/flux.pvd")
 
-        while not self.converged and it < self.maxit:
+        while not converged and it < self.maxit:
 
             # Normalize flux from the previous iteration:
             psi_old.assign(self.psi)
@@ -209,7 +206,7 @@ class GradShafranovSolver:
             else:
                 args = (
                     psi_old, psi_N, self.plasma.n, self.plasma.domain_mask, self.plasma.boundary_mask,
-                    self.plasma.psi0, self.plasma.psi_ax, self.plasma.x0_idx, self.plasma.x1_idx
+                    self.plasma.psi0, self.plasma.psi_ma, self.plasma.x0_idx, self.plasma.x1_idx
                 )
             self.psi.assign(solver.perform_iteration(*args))
 
@@ -224,18 +221,18 @@ class GradShafranovSolver:
 
             # Print iteration information
             if self.verbose:
-                print(f"Iteration {it+1}: H1 Error = {self.err:.6e}, psi at boundary = {self.plasma.psi0:.6f}, max psi = {self.plasma.psi_ax:.6f}")
+                print(f"Iteration {it+1}: H1 Error = {self.err:.6e}, psi at boundary = {self.plasma.psi0:.6f}, max psi = {self.plasma.psi_ma:.6f}")
 
             # Write the solution to file
             outfile.write(self.psi)
 
             # Check convergence:
             if self.err < self.tol:
-                self.converged = True
+                converged = True
             else:
                 it += 1
 
-        if not self.converged:
+        if not converged:
             print(f"Solver did not converge after {self.maxit} iterations. Final H1 Error = {self.err:.6e}\n")
         else:
             print(f"Solver converged in {it} iterations. Final H1 Error = {self.err:.6e}\n")
@@ -249,9 +246,9 @@ class GradShafranovSolver:
         """
         self.plot.mesh()
 
-    def plot_flux(self):
+    def plot_flux(self, path = "./results/flux_plot.png"):
         """
         Plot the flux function psi.
         This method saves a contour plot of the flux function in the results directory.
         """
-        self.plot.flux(self.psi, self.plasma.psi0)
+        self.plot.flux(self.psi, self.plasma.psi0, self.plasma.d, self.plasma.x1_idx, self.plasma.x0_idx, path, self.plasma.psi_X_point)

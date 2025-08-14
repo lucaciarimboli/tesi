@@ -3,8 +3,8 @@
 //----------------------------------//
 
 lc1 = 1;    // Default for boundary/coils
-lc2 = 0.3;  // Limiter
-lc3 = 0.1;  // Limiter divertor zone
+lc2 = 0.05;  // Limiter
+lc3 = 0.005;  // Limiter divertor zone
 
 //----------------------------------//
 //	      ARTIFICIAL BOUNDARY	    //
@@ -17,10 +17,10 @@ Point(3) = {14, 10, 0, lc1};
 Point(4) = {0.01, 10, 0, lc1};
 
 // HUGE RECTANGULAR BOUNDARY
-//Point(1) = {0.01, -30, 0, lc1};
-//Point(2) = {50, -30, 0, lc1};
-//Point(3) = {50, 30, 0, lc1};
-//Point(4) = {0.01, 30, 0, lc1};
+// Point(1) = {0.01, -30, 0, lc1};
+// Point(2) = {50, -30, 0, lc1};
+// Point(3) = {50, 30, 0, lc1};
+// Point(4) = {0.01, 30, 0, lc1};
 
 Line(1) = {1,2};
 Line(2) = {2,3};

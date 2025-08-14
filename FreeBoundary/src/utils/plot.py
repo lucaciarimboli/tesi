@@ -27,13 +27,13 @@ class Plot:
 
         # Get the coordinates of mesh nodes:
         coord_func = Function(VectorFunctionSpace(m, "CG", 1)).interpolate(as_vector(SpatialCoordinate(m)))
-        coords = coord_func.dat.data_ro[:]
+        self.coords = coord_func.dat.data_ro[:]
         
         # Get limiter nodes:
         limiter_idx = DirichletBC(V, 0.0, tags['limiter']).nodes
         lim = []
         for idx in limiter_idx:
-            lim.append(coords[idx])
+            lim.append(self.coords[idx])
         self.limiter = np.array(lim)
     
         if geometry == 'custom':
@@ -41,13 +41,13 @@ class Plot:
             inner_wall_idx = DirichletBC(V, 0.0, tags['inner_wall']).nodes
             iw = []
             for idx in inner_wall_idx:
-                iw.append(coords[idx])
+                iw.append(self.coords[idx])
             self.inner_wall = np.array(iw)
             # Get outer wall points:
             outer_wall_idx = DirichletBC(V, 0.0, tags['outer_wall']).nodes
             ow = []
             for idx in outer_wall_idx:
-                ow.append(coords[idx])
+                ow.append(self.coords[idx])
             self.outer_wall = np.array(ow)
 
             # ... coils missing ...
@@ -134,19 +134,35 @@ class Plot:
         plt.savefig("./results/mesh_plot.png")
         plt.close()
 
-    def flux(self,psi,psi0):
+    def flux(self,psi,psi0,d,x1_idx,x0_idx,path, X_POINT):
         '''
         @brief Plots the provided flux function psi.
 
-        @param psi The flux function to plot.
-        @param psi0 The flux contour line that identifies the plasdma boundary
+        @param psi: The flux function to plot.
+        @param psi0: The flux contour line that identifies the plasma boundary
+        @param d: Signed distance function from the plasma boundary
+        @param x1_idx: index of the dof where the magnetic axis is located
         '''
-        print("\nPlotting flux in file 'results/flux_plot.png'...\n")
+        print(f"\nPlotting flux in file '{path}'...\n")
         fig, ax = plt.subplots()
 
-        # Plot flux and psi=psi0 contour line:
+        # Plot flux, plasma boundary and psi=psi0 contour line:
         fig.colorbar(tripcolor(psi,axes=ax))
-        tricontour(psi, levels=[psi0], colors='red', linewidths=1.5, axes=ax)
+
+        #------------------------FOR DEBUG------------------------------------#
+        X_POINT.sort()
+        tricontour(psi, levels=X_POINT, colors='pink', linewidths=1, axes=ax)
+        #---------------------------------------------------------------------#
+
+        #tricontour(psi, levels=[psi0], colors='red', linewidths=1, axes=ax)
+        tricontour(d, levels=[0], colors='red', linewidths=1.2, axes=ax)
+
+
+        # Plot magnetic axis:
+        x1 = self.coords[x1_idx]
+        x0 = self.coords[x0_idx]
+        ax.scatter(x1[0], x1[1], color='red', linewidth=1.2, label='Magnetic axis')
+        ax.scatter(x0[0], x0[1], color='blue', linewidth=1.5, label='X0')
 
         # Add limiter:
         ax.plot(self.limiter[:, 0], self.limiter[:, 1], 'b-', linewidth=1, label='Limiter')
@@ -171,5 +187,5 @@ class Plot:
         plt.xlabel("r")
         plt.ylabel("z")
         plt.axis('equal')
-        plt.savefig("./results/flux_plot.png")
+        plt.savefig(path)
         plt.close()
