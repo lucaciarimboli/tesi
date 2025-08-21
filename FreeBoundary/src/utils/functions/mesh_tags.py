@@ -18,6 +18,8 @@ def get_tags(geometry):
 
         tags = {
             'boundary': 15,
+            'dirichlet_boundary': 27,
+            'neumann_boundary': 26,
             'vacuum': 2,
             'vessel': 1,
             'coils': np.array([3,4,5,6,7,8,9,10,11,12,13,14]),

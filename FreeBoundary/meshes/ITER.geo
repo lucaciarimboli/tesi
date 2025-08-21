@@ -3,8 +3,8 @@
 //----------------------------------//
 
 lc1 = 1;    // Default for boundary/coils
-lc2 = 0.05;  // Limiter
-lc3 = 0.005;  // Limiter divertor zone
+lc2 = 0.5;  // Limiter
+lc3 = 0.2;  // Limiter divertor zone
 
 //----------------------------------//
 //	      ARTIFICIAL BOUNDARY	    //
@@ -276,9 +276,9 @@ Physical Surface("Coil 10",12) = {12};
 Physical Surface("Coil 11",13) = {13};
 Physical Surface("Coil 12",14) = {14};
 
-Physical Curve("Boundary",15) = {1,2,3,4};
-// Physical Curve("Gamma_N",26) = {1,2,3};
-// Physical Curve("Gamma_D",27) = {4};
+// Physical Curve("Boundary",15) = {1,2,3,4};
+Physical Curve("Gamma_N",26) = {1,2,3};
+Physical Curve("Gamma_D",27) = {4};
 Physical Curve("Limiter",16) = {11:42};
 Physical Curve("Solenoid",17) = {101,121,122,123,124,125,126,107,116,115,114,113,112,111};
 Physical Curve("Coil 7", 18) = {131, 132, 133, 134};

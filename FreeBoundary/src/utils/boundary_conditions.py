@@ -1,25 +1,7 @@
 from firedrake import *
 from firedrake.mesh import plex_from_cell_list
 import numpy as np
-from scipy import special
-
-def Green_function(xr,xz,yr,yz):
-        '''
-            Evaluates the Green function for the Grad-Shafranov operator in two given points of the poloidal plane.
-
-            param xr: radial coordinate of point x
-            param xz: height coordinate of point x
-            param yr: radial coordinate of point y
-            param yz: height coordinate of point y
-
-            returns: G(x,y)
-        '''
-        mu0 = 4e-7 * pi
-        k2 = 4*xr*yr / ((xr+yr)**2+(xz-yz)**2)
-        k = sqrt(k2)
-        Kk = special.ellipk(k)  # Elliptic integral of the first kind
-        Ek = special.ellipe(k)  # Elliptic integral of the second kind
-        return mu0 * sqrt(xr*yr) / (2*pi*k) * ( (2 - k2)*Kk - 2*Ek ) 
+from src.utils.functions.boundary_integrals import *
 
 
 class JN_coupling_BCs:
@@ -29,20 +11,14 @@ class JN_coupling_BCs:
         for the free-boundary Grad-Shafranov equation. 
     '''
 
-    def __init__(self,params):
+    def __init__(self, V, boundary_tag):
         '''
-            params should contain:
-            V - function space for the Grad-Shafranov solution "psi"
-            psi - function to initialize the unknown psi, default is constant 0
-            coils j - array with the toroidal current density in each coil
-            coils tag - array with the mesh tag of each coil
-            boundary tag - mesh tag for the artificial boundary
+            Constructor for the BEM solver class:
+            @param boundary_tag: mesh tag for the artificial boundary
+            @param psi: initial condition for the flux function
         '''
 
-        V = params['V']
-        self.coils_j = params['coils j']
-        self.coils_tag = params['coils tag']
-        self.boundary_tag = params['boundary tag']
+        self.boundary_tag = boundary_tag
 
         # Create 1D mesh on the boundary:
         m2d = V.mesh()
@@ -53,81 +29,88 @@ class JN_coupling_BCs:
         V_info = V.ufl_element()
         self.Q = FunctionSpace(self.m, V_info.family(), V_info.degree())
 
-        # Initialize the functions psi and q
-        self.psi = Function(V).interpolate(params.get('psi',Constant(0.0)))
-        self.q = Function(V) 
-
-        # Extract the needed indeces of the m2d dofs:
-        self.dofs_indexes()
-
-        # Compute functions K and V:
+        # Initialize the integral function K:
         self.K_func = Function(self.Q)
-        self.L_func = Function(self.Q)
-        self.assemble_terms()
+
+        # Define boundary mask F and map "neighbor_segments",
+        # which are needed to fill "K_func".
+        self.integral_mask(m2d)
+
+        # Compute Green functions and matrix M:
+        self.assemble_Green_function(V)
+        self.assemble_matrix(V)
 
 
+## CONSTRUCTOR METHODS:
     def boundary_mesh(self, m2d):
         '''
             "Extract" a one-dimensional mesh for the boundary of the given two-dimensional mesh.
             Nodes indexing is preserved, external facets indexing is not.
-            Param m2d: Two-dimensional mesh
+            @param m2d: Two-dimensional mesh
         '''
 
-        # Fill "dof_coords" vector with the coordinates of the boundary nodes of the 2D mesh
+        # Extract dofs coordinates:
         coord_func = Function(VectorFunctionSpace(m2d, "CG", 1)).interpolate(as_vector(SpatialCoordinate(m2d)))
-        self.Q_dofs = FunctionSpace(m2d, "CG", 1).boundary_nodes(self.boundary_tag)
-        dof_coords = coord_func.dat.data_ro[self.Q_dofs]
+        self.dof_coords = coord_func.dat.data_ro[:]
+
+        # Fill "Q_dof_coords" vector with the coordinates of the boundary nodes of the 2D mesh
+        self.Q_dofs = DirichletBC(FunctionSpace(m2d, "CG", 1), 0.0, self.boundary_tag).nodes
+        Q_dof_coords = self.dof_coords[self.Q_dofs]
+
+        # Identify extremes of the neumann boundary:
+        self.extremes = np.argsort(Q_dof_coords[:, 0])[:2]
 
         # Fill "segments" with the 1D cells (segments) on the boundary
-        n = len(dof_coords)
-        segments = set()   # format "set" to ignore duplicates
+        n = len(self.Q_dofs)
+        segments = set()   # format "set" to ignore 
+        self.neighbors_map = []
+        self.neighbors_dist = []
 
         for i in range(n):
             # Compute the distance with the others dofs:
             dist = np.zeros(n)
             for j in range(n):
-                dist[j] = np.linalg.norm(dof_coords[i]-dof_coords[j])
+                dist[j] = np.linalg.norm(Q_dof_coords[i]-Q_dof_coords[j])
             dist[i] = np.inf    # set distance with itself = inf
 
             # Identify the indexes of the two neighbouring dofs of dof_coords[i]
-            neighbour_dofs = np.argsort(dist)[:2]
-            for k in neighbour_dofs:
-                segments.add(tuple(sorted([i,k])))
+            # (one if the dof is an extreme)
+            if i in self.extremes:
+                neighbor_dofs = np.argmin(dist)
+                segments.add(tuple(sorted([i,neighbor_dofs])))
+                # Add neighbor idx and dist to maps as iterables (np.array)
+                self.neighbors_map.append(np.array([self.Q_dofs[neighbor_dofs]]))
+                self.neighbors_dist.append(np.array([dist[neighbor_dofs]]))
+
+            else:    
+                neighbor_dofs = np.argsort(dist)[:2]
+                for k in neighbor_dofs:
+                    segments.add(tuple(sorted([i,k])))
+                # Add neighbors idexes and distances to maps
+                self.neighbors_map.append(self.Q_dofs[neighbor_dofs])
+                self.neighbors_dist.append(dist[neighbor_dofs])
 
         # Convert "segments" to array:
         segments = np.array(list(segments))
 
         # Build 1D boundary mesh from plex:
-        plex = plex_from_cell_list(1, segments, dof_coords, comm=m2d.comm)
+        plex = plex_from_cell_list(1, segments, Q_dof_coords, comm=m2d.comm)
         self.m = Mesh(plex, dim=1, reorder = False)
 
 
-    def trace(self,f):
-        '''
-            Extract the trace of funciton f on the boundary mesh.
-            param f: function defined on the 2D mesh from which "self.m" is built in "self.boundary_mesh"
-        ''' 
-        # Boundary nodes of the 2D mesh:
-        V = f.function_space()
-
-        # Assign values of f on boundary nodes to its trace:
-        tr_f = Function(self.Q)
-        tr_f.dat.data[:] = f.dat.data_ro[self.Q_dofs]
-        return tr_f  
-    
-
-    def dofs_indexes(self):
+    def dofs_indexes(self, V):
         '''
             This function is needed in the constructor.
             It extracts and stores in "V_dofs" the indexes of the dofs that lie on the boundary triangles and on the coils.
             Over these nodes the green function will be evaluated in the computation of the integral functions K and L.
             This operation is done in order to avoid computing the green function over the whole domain since it is only needed
             at the boundary and in the coils + its gradient is needed at the boundary.
+
+            @TODO: considera solo le boundary cells del neumann boundary
         '''
         # Extract the dof of the boundary mesh cells:
-        V = self.psi.function_space()
         m2d = V.mesh()
-        bdry_cells = m2d.topology.exterior_facets.facet_cell_map.values    #idx of boundary cells
+        bdry_cells = m2d.exterior_facets.facet_cell_map.values    #idx of boundary cells
         V_dofs = set()
         cell_nodes = V.cell_node_map()
         for dofs in cell_nodes.values[bdry_cells]:      # nodes format of kind: [[i,j,k]]
@@ -139,151 +122,232 @@ class JN_coupling_BCs:
         for dof in self.Q_dofs:
             V_dofs.add(dof)
 
-        # Add to "V_dofs" the dofs in coils:
-        for tag in self.coils_tag:
-            coil_cells = m2d.cell_subset(tag).indices
-            for dofs in cell_nodes.values[coil_cells]:
-                for dof in dofs:        # Non capisco perché qua non ci vada [0] come sopra, ma così funziona
-                    V_dofs.add(dof)
-
-        self.V_dofs = np.array(list(V_dofs))
+        return np.array(list(V_dofs))
 
 
-    def assemble_terms(self):
+    def assemble_Green_function(self,V):
         '''
-            Define the integral functions K and L. Assemble the matrix M that allows to compute q from V(q).
-            The function L and the matrix M are fixed, while K needs to be updated at every iteration.
+            Assemble the Green functions on the boundary elements only.
+            For each boundary dof, the list "G_list" contains at the corresponding
+            index (considering 1d mesh indexing) with the fundamental solution
+            obtained placing a point source in the dof itself
+        '''
+
+        # Identify dofs of the boundary cells:
+        V_dofs = self.dofs_indexes(V)
+
+        # List containing the Green function for each position of the point source 
+        self.G_list = []
+
+        for i in self.Q_dofs:
+            X = self.dof_coords[i]
+
+            # Fixed x, define G(x,y) on the boundary elements only
+            G = Function(V) 
+            for j in V_dofs:
+                Y = self.dof_coords[j]
+                G.dat.data[j] = Green_function(X[0],X[1],Y[0],Y[1])
+            self.G_list.append(G)
+
+            #-----------------------------------------------------------#
+            #----- FINCHE' NON RISOLVO PROBLEMA DELL'INTEGRAZIONE-------#
+            #-----------------------------------------------------------#
+            G.dat.data[i] = 0.0
+            #-----------------------------------------------------------#
+            #-----------------------------------------------------------#
+
+
+    def assemble_matrix(self,V):
+        '''
+            Assemble the Green function and the matrix M that allows to compute g from V(g).
         '''
 
         # Extract boundary dofs indexes (Q dofs indexes)
-        V = self.psi.function_space()
-        m2d = V.mesh()
-        x,y = SpatialCoordinate(m2d)
         mu0 = 4e-7 * pi
 
-        # Dof coordinates for function evaluation:
-        coord_func = Function(VectorFunctionSpace(m2d, "CG", 1)).interpolate(as_vector(SpatialCoordinate(m2d)))
-        dof_coords = coord_func.dat.data_ro[:]
-
         # Matrix M for the computation of q:
-        N = len(self.Q_dofs)
-        self.M = np.zeros((N,N))
+        n = len(self.Q_dofs)
+        self.M = np.zeros((n,n))
 
-        self.G_list = []  # List containing the Green function for each position of the point source 
+        for i in range(n):
+            G = self.G_list[i]
+            source_neighbors = self.neighbors_map[i]
+            dof_i = self.Q_dofs[i]
+            ri = self.dof_coords[dof_i][0]
 
-        for i in range(N):
-            dof_idx = self.Q_dofs[i]    # index of the i-esim dof of Q in the 2d mesh
-            X = dof_coords[dof_idx]
+            for j in range(n):
+                dof_j = self.Q_dofs[j]
+                rj = self.dof_coords[dof_j][0]
+                Gj = G.dat.data_ro[dof_j]
+                h = self.neighbors_dist[j]
 
-            # Fixed x, define G(x,y) on the boundary elements only
-            G = Function(V).zero() 
-            for j in self.V_dofs:
-                Y = dof_coords[j]
-                G.dat.data[j] = Green_function(X[0],X[1],Y[0],Y[1])
+                #self.M[i,j] = 0.0 # placeholder   
+                # Point source dof on the diagonal (with singularity)
+                if j==i:
+                    if j in self.extremes:
+                        self.M[i,j] = 1/mu0 * matrix_diagonal(h[0],ri)
+                    else:
+                        self.M[i,j] = 1/mu0 * ( matrix_diagonal(h[0],ri) + matrix_diagonal(h[1],ri) )
 
-            # Fix inf value in the point source:
-            G.dat.data[dof_idx] = 1e3 # Values of G are of the order of 10^-6/10^-7
-            self.G_list.append(G)
-
-            # Problema: K_func contiene tutti "nan" ed L_func tutti 0. Quindi potrebbe esserci un problema nella Green function!!
-            #print("\nGreen function values for x on the boundary:")
-            #print(G.dat.data_ro[self.V_dofs])
-            #print(f"Valore di G nel dof della point source: {G.dat.data_ro[dof_idx]}")
-            #print(f'Posizione della point source: [{X[0]},{X[1]}]')
-
-            # Compute K value at dof i:
-            n = FacetNormal(m2d)    # Outward pointing normal -> "-" needed to have inward pointing
-            self.K_func.dat.data[i] = assemble( - 1 / (mu0 * x) * dot(grad(G),n) * self.psi * ds(self.boundary_tag,domain=m2d) )
-
-            # Compute L values at dof i:
-            for k in range(len(self.coils_j)):
-                self.L_func.dat.data[i] += self.coils_j[k] * assemble( G * dx(self.coils_tag[k], domain=m2d))
-
-            # Assemble matrix M:
-            for l in range(N):
-                dof_idx_2 = self.Q_dofs[l]
-                Xl = dof_coords[dof_idx_2]
-
-                # compute the sum of the distances between Xl and neighbouring dofs
-                dist = np.zeros(N)
-                for m in range(N):
-                    Xm = dof_coords[self.Q_dofs[m]]
-                    dist[m] = np.linalg.norm(Xl-Xm)
-                dist[l] = np.inf
-                sum_length = np.sum(np.sort(dist)[:2])
+                # Handle singularity in neighboring dofs
+                elif dof_j in source_neighbors:
                 
-                # Fill the matrix M:
-                self.M[l,i] = sum_length / 2 * G.at(Xl[0],Xl[1])
+                    if j in self.extremes:
+                        self.M[i,j] = 1/mu0 * matrix_close(h[0],ri)
+                    else:
+                        # Re-order h so that the first element correspond to the singularity
+                        j_neighbors = self.neighbors_map[j]
+                        for k in range(2):
+                            if j_neighbors[k] == dof_i:
+                                h_close = h[k]
+                            else:
+                                h_far = h[k]
+
+                        self.M[i,j] = 1/mu0 * (matrix_close(h_close,ri) + matrix_far(h_far,Gj,rj))
+
+                # Simple trapezoidal quadrature far from singularity
+                elif j in self.extremes:
+                    self.M[i,j] = 1/mu0 * matrix_far(h[0],Gj,rj)
+                else:
+                    self.M[i,j] = 1/mu0 * (matrix_far(h[0],Gj,rj) + matrix_far(h[1],Gj,rj))      
 
 
-    def update_function_K(self):
+    def integral_mask(self,m2d):
+        '''
+            Define a vector function F which is constant on boundary elements.
+            The function is zero everywhere but in the mesh boundary, where is s.t.
+            its outward normal is always =1.
+
+            @param m: mesh 
+ 
+            Inside boundary integrals with "assemble" one should include "*dot(F,n)", where n is the
+            FacetNormal. By manually setting F = [0,0] on a boundary element it is possible
+            to exclude selected boundary elements from the integration domain.
+
+            To allow this operation, a map "nighbor_segments" is built. It provides for each boundary node
+            of the mesh, the F dofs that lie on the two neighboring segments.
+
+            @NOTE: The creation of an actual custom measure on the boundary that excludes given
+            boundary elements based on their mesh indexes or on geometric considerations is not
+            currently doable by means of Firedrake functions or by manipulating the plex.
+            The introduction of this F might not be "elegant", but it is an effective and practical
+            solution for excluding dofs with singularities from boundary integrals.
+        '''
+        W = VectorFunctionSpace(m2d, "HDivT", 0)
+        self.F = Function(W)
+
+        # Identify dofs that lie on boundary segments:
+        boundary_seg_dofs = DirichletBC(FunctionSpace(m2d, "HDivT", 0),0.0,"on_boundary").nodes
+        coord_func = Function(W).interpolate(as_vector(SpatialCoordinate(m2d)))
+        boundary_coords = coord_func.dat.data_ro[boundary_seg_dofs]
+
+        min_r = min(boundary_coords[:,0])
+        max_r = max(boundary_coords[:, 0])
+        max_z = max(boundary_coords[:, 1])
+        min_z = min(boundary_coords[:, 1])
+
+        for idx in boundary_seg_dofs:
+            X = coord_func.dat.data_ro[idx]
+            if X[1] == min_z:
+                self.F.dat.data[idx][1] = -1
+            if X[1] == max_z:
+                self.F.dat.data[idx][1] = 1
+            if X[0] == min_r:
+                self.F.dat.data[idx][0] = -1
+            if X[0] == max_r:
+                self.F.dat.data[idx][0] = 1
+
+        # Build map that associate to each Q dof, the two neighboring W dofs in the boundary
+        n_dofs = len(self.Q_dofs)
+        n_segments = len(boundary_seg_dofs)
+        self.neighbor_segments = []
+
+        for i in range(n_dofs):
+            dof = self.Q_dofs[i]
+            coords = self.dof_coords[dof]
+            dist = np.zeros(n_segments)
+            for j in range(n_segments):
+                dist[j] = np.linalg.norm(coords-boundary_coords[j])
+            ns_idxs = np.argsort(dist)[:2]
+            self.neighbor_segments.append(boundary_seg_dofs[ns_idxs])
+
+
+## METHODS FOR COMPUTING NEUMANN DATUM:
+    def compute_K(self, psi):
         '''
             Update integral function K based on the value of the magnetic flux psi.
         '''
 
-        V = self.psi.function_space()
+        V = psi.function_space()
         m2d = V.mesh()
-        x,y = SpatialCoordinate(m2d)
+        x,_ = SpatialCoordinate(m2d)
         n = FacetNormal(m2d)
 
         mu0 = 4e-7 * pi
+        n_dofs = len(self.Q_dofs)
 
         # Assemble the new integral function K:
-        for i in range(len(self.Q_dofs)):
-            # G = Function(V).assign(self.G_list[i])
-            self.K_func.dat.data[i] = assemble( - 1 / (mu0 * x) * dot(grad(self.G_list[i]),n) * self.psi * ds(self.boundary_tag,domain=m2d) )
+        for i in range(n_dofs):
+            G = self.G_list[i]
+            dof_i = self.Q_dofs[i]
+            ns = self.neighbor_segments[i]
+
+            # Mask-out neighbor segments of the i-esim boundary dof
+            original_F_values = self.F.dat.data_ro[ns]
+            self.F.dat.data[ns] = [[0.0,0.0],[0.0,0.0]]
+
+            # Compute K(dof_i) contribution from all segments far from the singularity:
+            integral = assemble( - 1/(mu0*x) * dot(grad(G),n) * dot(self.F,n) * psi * ds(self.boundary_tag,domain=m2d) )
+            self.F.dat.data[ns] = original_F_values
+            
+            neighbors = self.neighbors_map[i]
+            h = self.neighbors_dist[i]
+            source_coords = self.dof_coords[dof_i]
+            psi_source = psi.dat.data_ro[dof_i]
+            
+            # Add the contribution of the neighborhood of the singularity:
+            for j, neigh in enumerate(neighbors):
+                neigh_coords = self.dof_coords[neigh]
+                if source_coords[0] == neigh_coords[0]:
+                    psi_neigh = psi.dat.data_ro[neigh]
+                    integral += 1/mu0 * K_neighborhood_integral(h[j],source_coords[0],psi_source,psi_neigh)
+
+            # Update value of integral function K:
+            self.K_func.dat.data[i] = integral 
 
 
-    def solve_boundary_integral_eq(self):
+    def solve_boundary_integral_eq(self,psi):
         '''
             Solves the boundary integral equation for V(q), solves the linear system to compute q from V(q).
         '''
 
         # Extract the trace of psi:
         psi_trace = Function(self.Q)
-        psi_trace.dat.data[:] = self.psi.dat.data_ro[self.Q_dofs]
+        psi_trace.dat.data[:] = psi.dat.data_ro[self.Q_dofs]
         
-        # Solve the problem to compute V(q):
-        #v = TrialFunction(self.Q)
-        #p = TestFunction(self.Q)
-        #a = v * p * dx(domain=self.m)
-        #L = (0.5 * psi_trace + self.K_func - self.L_func) * p * dx(domain=self.m)
-        
-        Vq = Function(self.Q).assign(0.5 * psi_trace + self.K_func - self.L_func)
-        #solve(a==L,Vq)
+        # Define v(g) integral function
+        v = Function(self.Q).assign(0.5 * psi_trace + self.K_func)
 
-        #print("Vq values before solve:") -> in Vq sono tutti nan!!
-        #print(Vq.dat.data_ro[:])
+        # Solve the linear system to obtain g from V(q):
+        return np.linalg.solve(self.M, v.dat.data_ro[:])
+    
 
-        # Solve the linear system to obtain q from V(q):
-        N = len(self.Q_dofs)
-        #V_vec = np.zeros(N)
-        #for i in range(N):
-        #    dof_idx = self.Q_dofs[i]
-        #    V_vec[i] = Vq.dat.data_ro[dof_idx]
-        q_vec = np.linalg.solve(self.M, Vq.dat.data_ro[:])
+    def compute_datum(self,psi):
+        '''
+            Given the flux function psi, computes the neumann boundary datum g
+            using bundary element method
+        '''
 
-        # Update q:      
-        for i in range(N):
-            dof_idx = self.Q_dofs[i]
-            self.q.dat.data[dof_idx] = q_vec[i]  # q!=0 only on boundary dofs
+        V = psi.function_space()
+        g = Function(V)     # Neumann datum
 
-        # TEST FOR MATRIX:
-        for i in range(N):
-            computed_Vq = assemble(self.G_list[i] * self.q * ds(self.boundary_tag))
-            print(f'Value of V(q) = {Vq.dat.data_ro[i]}, Computed integral: {computed_Vq}')
+        # compute K(psi):
+        self.compute_K(psi)
+        # compute Neumann boundary datum:
+        g.dat.data[self.Q_dofs] = self.solve_boundary_integral_eq(psi)
 
-        # TEST FOR q:
-        #q_integral = assemble(self.q * ds(self.boundary_tag))   # l'integrale di q è circa 0 solo alla prima iterazione!
-        #print(f'Integrale di q su tutto il bordo: {q_integral}')
+        # TEST FOR g:
+        g_integral = assemble(g * ds(domain=V.mesh()))   # l'integrale di g è circa 0 solo alla prima iterazione!
+        print(f'Integrale di g su tutto il bordo: {g_integral}')
 
-
-    def linear_form(self,psi_old):
-
-        self.psi.interpolate(psi_old)
-        self.update_function_K()
-        self.solve_boundary_integral_eq()
-
-        V = self.psi.function_space()
-        phi = TestFunction(V)
-        return self.q * phi * ds(self.boundary_tag)
+        return g

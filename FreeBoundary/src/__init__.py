@@ -3,6 +3,7 @@ from .utils.plasma import Plasma
 from .utils.fixed_point import Picard
 from .utils.newton import Newton
 from .utils.plot import Plot
+from .utils.boundary_conditions import JN_coupling_BCs
 from .utils.functions.coils import compute_j_coils
 from .utils.functions.geometry import generate_mesh
 from .utils.functions.mask import delta_point, delta_line, heaviside
@@ -14,6 +15,7 @@ __all__ = [
     'Picard',
     'Newton',
     'Plot',
+    'JN_coupling_BCs',
     'compute_j_coils',
     'generate_mesh',
     'delta_point',

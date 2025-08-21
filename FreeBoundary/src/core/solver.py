@@ -1,7 +1,7 @@
 from firedrake import *
 
 from src.utils.plasma import Plasma
-# from src.utils.boundary_conditions import JN_coupling_BCs
+from src.utils.boundary_conditions import JN_coupling_BCs
 from src.utils.fixed_point import Picard
 from src.utils.newton import Newton
 from src.utils.plot import Plot
@@ -49,17 +49,8 @@ class GradShafranovSolver:
         }
 
         # Set boundary conditions
-        self.bcs = DirichletBC(self.V, 0.0, self.tags['boundary'])
-        '''
-        BEM_params = {
-            'V': self.V,
-            'coils j': self.j_coils,
-            'coils tag': self.tags['coils'],
-            #'boundary tag': self.tags['Gamma Neumann']
-            'boundary tag': self.tags['boundary']
-        }
-        self.BEM = JN_coupling_BCs(BEM_params)
-        '''
+        self.dirichlet = DirichletBC(self.V, 0.0, self.tags['dirichlet_boundary'])
+        self.neumann = JN_coupling_BCs(self.V, self.tags['neumann_boundary'])
 
         # Set algorithm parameters:
         self.set_algorithm(params.get('algorithm', "Picard"))
@@ -176,16 +167,15 @@ class GradShafranovSolver:
 
         # Initialize solver:
         if self.algorithm == "Picard":
-            solver = Picard(self.V,self.data,self.tags,self.bcs)
+            solver = Picard(self.V,self.data,self.tags,self.dirichlet)
             print("Using fixed point iterations...\n")
         else:
-            solver = Newton(self.V,self.data,self.tags,self.bcs)
+            solver = Newton(self.V,self.data,self.tags,self.dirichlet)
             print("Using Newton's method...\n")
 
-        # For bem boundary conditions
-        #solver_params["neumann"] = self.BEM.linear_form(psi_old)    # JN boundary conditions
-        #solver_params["ns"] = VectorSpaceBasis(constant=True)
-        #solver_params["dirichlet"] = [DirichletBC(self.V, 0.0, self.tags['Gamma Dirichlet'])]
+        # Neumann boundary datum computed with BEM
+        g = Function(self.V)
+        g.assign(self.neumann.compute_datum(psi_old))
 
         # Set up the solver parameters
         it = 0
@@ -202,11 +192,11 @@ class GradShafranovSolver:
 
             # Solve the variational problem
             if self.algorithm == "Picard":
-                args = (psi_N, self.plasma.domain_mask)
+                args = (psi_N, self.plasma.domain_mask,g)
             else:
                 args = (
                     psi_old, psi_N, self.plasma.n, self.plasma.domain_mask, self.plasma.boundary_mask,
-                    self.plasma.psi0, self.plasma.psi_ma, self.plasma.x0_idx, self.plasma.x1_idx
+                    self.plasma.psi0, self.plasma.psi_ma, self.plasma.x0_idx, self.plasma.x1_idx, g
                 )
             self.psi.assign(solver.perform_iteration(*args))
 
@@ -216,8 +206,8 @@ class GradShafranovSolver:
             # Update the plasma mask (smoothed):
             self.plasma.update(self.psi)
 
-            # Update BC term:
-            # ...
+            # Update Neumann BC datum:
+            g.assign(self.neumann.compute_datum(self.psi))
 
             # Print iteration information
             if self.verbose:

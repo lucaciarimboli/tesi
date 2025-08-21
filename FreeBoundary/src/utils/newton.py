@@ -78,7 +78,7 @@ class Newton:
         return - d + l0 + l1
 
 
-    def perform_iteration(self, psi_old, psi_N, n, plasma_mask, boundary_mask, psi0, psi_ax, x0_idx, x1_idx):
+    def perform_iteration(self, psi_old, psi_N, n, plasma_mask, boundary_mask, psi0, psi_ax, x0_idx, x1_idx, g):
 
         # Normal derivative for psi at plasma boundary (computed everywhere)
         V = self.W.sub(0)
@@ -87,6 +87,9 @@ class Newton:
         # Define linear and bilinear forms:
         a = self.a + self.Jacobian_form(psi_old, psi_N, dpsidn, plasma_mask, boundary_mask, psi0, psi_ax, x0_idx, x1_idx)
         L = self.linear_form(psi_N, plasma_mask)
+
+        # Neumann boundary condition:
+        L += g * self.phi * ds(self.tags['neumann_boundary'], domain=m)
 
         # Solve for psi:
         w = Function(self.W)

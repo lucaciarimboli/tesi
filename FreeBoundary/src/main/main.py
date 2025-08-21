@@ -45,7 +45,7 @@ params = {
     'geometry': "ITER",
 
     # Currents configuration:
-    'I': [-1.4e6, -9.5e6, -2.04e7, -2.04e7, -1.0e7, 3.6e6, 5.5e6, -2.3e6, -6.5e6, -4.8e6, -7.5e6, 1.73e7],
+    'I': [-8.208e5, -8.621e4, 2.783e6, 1.703e6, -6.491e5, -7.971e5, -2.026e6, -2.508e6, -2.15e6, -1.874e6, -3.607e6, -2.303e6],
     'j_plasma': G,
     'j_plasma_derivative': dGdpsiN, # needed only for Newton iterations
 
@@ -54,7 +54,7 @@ params = {
     'tolerance': 1e-10,
     'verbose': True,
     'show_plots': True,
-    'algorithm': "Newton",
+    'algorithm': "Picard",
 
     # Initial guess for the flux function:
     'initial_guess': Constant(0.01) # to avoid infinite normalized error at first iteration
@@ -70,7 +70,6 @@ if __name__ == "__main__":
     solver.plot_mesh()
     start_time = time.time()
 
-    #solver.set_algorithm("Picard")
     solver.set_iterations_params(1, params['tolerance'], params['verbose'])
 
     for i in range(30):
