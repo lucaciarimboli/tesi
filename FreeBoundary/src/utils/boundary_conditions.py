@@ -149,20 +149,17 @@ class JN_coupling_BCs:
                 G.dat.data[j] = Green_function(X[0],X[1],Y[0],Y[1])
             self.G_list.append(G)
 
-            #-----------------------------------------------------------#
-            #----- FINCHE' NON RISOLVO PROBLEMA DELL'INTEGRAZIONE-------#
-            #-----------------------------------------------------------#
-            G.dat.data[i] = 0.0
-            #-----------------------------------------------------------#
-            #-----------------------------------------------------------#
+            # G.dat.data[i] = inf for every i. This value is appositly handeld in the calculations.
+            # Here, just put whatever value to avoid having "inf", which value wouldn't make any difference
+            # in the following calculations.
+            G.dat.data[i] = 1
 
 
     def assemble_matrix(self,V):
         '''
             Assemble the Green function and the matrix M that allows to compute g from V(g).
+            @TODO: adjust forms (also in boundary_integrals) to make the matrix compute q instead of g.
         '''
-
-        # Extract boundary dofs indexes (Q dofs indexes)
         mu0 = 4e-7 * pi
 
         # Matrix M for the computation of q:
@@ -185,15 +182,15 @@ class JN_coupling_BCs:
                 # Point source dof on the diagonal (with singularity)
                 if j==i:
                     if j in self.extremes:
-                        self.M[i,j] = 1/mu0 * matrix_diagonal(h[0],ri)
+                        self.M[i,j] = mu0 * matrix_diagonal(h[0],ri)
                     else:
-                        self.M[i,j] = 1/mu0 * ( matrix_diagonal(h[0],ri) + matrix_diagonal(h[1],ri) )
+                        self.M[i,j] = mu0 * ( matrix_diagonal(h[0],ri) + matrix_diagonal(h[1],ri) )
 
                 # Handle singularity in neighboring dofs
                 elif dof_j in source_neighbors:
                 
                     if j in self.extremes:
-                        self.M[i,j] = 1/mu0 * matrix_close(h[0],ri)
+                        self.M[i,j] = mu0 * matrix_close(h[0],ri)
                     else:
                         # Re-order h so that the first element correspond to the singularity
                         j_neighbors = self.neighbors_map[j]
@@ -203,13 +200,13 @@ class JN_coupling_BCs:
                             else:
                                 h_far = h[k]
 
-                        self.M[i,j] = 1/mu0 * (matrix_close(h_close,ri) + matrix_far(h_far,Gj,rj))
+                        self.M[i,j] = mu0 * (matrix_close(h_close,ri) + matrix_far(h_far,Gj,rj))
 
                 # Simple trapezoidal quadrature far from singularity
                 elif j in self.extremes:
-                    self.M[i,j] = 1/mu0 * matrix_far(h[0],Gj,rj)
+                    self.M[i,j] = mu0 * matrix_far(h[0],Gj)
                 else:
-                    self.M[i,j] = 1/mu0 * (matrix_far(h[0],Gj,rj) + matrix_far(h[1],Gj,rj))      
+                    self.M[i,j] = mu0 * (matrix_far(h[0],Gj) + matrix_far(h[1],Gj))      
 
 
     def integral_mask(self,m2d):
@@ -242,9 +239,9 @@ class JN_coupling_BCs:
         boundary_coords = coord_func.dat.data_ro[boundary_seg_dofs]
 
         min_r = min(boundary_coords[:,0])
-        max_r = max(boundary_coords[:, 0])
-        max_z = max(boundary_coords[:, 1])
-        min_z = min(boundary_coords[:, 1])
+        max_r = max(boundary_coords[:,0])
+        max_z = max(boundary_coords[:,1])
+        min_z = min(boundary_coords[:,1])
 
         for idx in boundary_seg_dofs:
             X = coord_func.dat.data_ro[idx]
@@ -310,10 +307,10 @@ class JN_coupling_BCs:
                 neigh_coords = self.dof_coords[neigh]
                 if source_coords[0] == neigh_coords[0]:
                     psi_neigh = psi.dat.data_ro[neigh]
-                    integral += 1/mu0 * K_neighborhood_integral(h[j],source_coords[0],psi_source,psi_neigh)
+                    integral += K_neighborhood_integral(h[j],source_coords[0],psi_source,psi_neigh)
 
             # Update value of integral function K:
-            self.K_func.dat.data[i] = integral 
+            self.K_func.dat.data[i] = integral
 
 
     def solve_boundary_integral_eq(self,psi):
@@ -339,15 +336,18 @@ class JN_coupling_BCs:
         '''
 
         V = psi.function_space()
-        g = Function(V)     # Neumann datum
+        q = Function(V)     # Neumann datum
 
         # compute K(psi):
         self.compute_K(psi)
+
         # compute Neumann boundary datum:
-        g.dat.data[self.Q_dofs] = self.solve_boundary_integral_eq(psi)
-
-        # TEST FOR g:
-        g_integral = assemble(g * ds(domain=V.mesh()))   # l'integrale di g è circa 0 solo alla prima iterazione!
-        print(f'Integrale di g su tutto il bordo: {g_integral}')
-
-        return g
+        q.dat.data[self.Q_dofs] = self.solve_boundary_integral_eq(psi)
+        #print(q.dat.data[self.Q_dofs])
+        
+        # TEST FOR g -> verificare compatibility condition
+        #mesh = V.mesh()
+        #q_integral = assemble(q * ds(self.boundary_tag, domain=mesh))   # l'integrale di q è circa 0 solo alla prima iterazione!
+        #print(f'Integrale di q su tutto il bordo: {q_integral}')
+        
+        return q

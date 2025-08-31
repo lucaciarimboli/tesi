@@ -31,8 +31,8 @@ def matrix_diagonal(len_I, ri):
         @param len_I: boundary element length
         @param ri: radial coordinate of i-esim dof
     '''
-    m = 1/(4*pi) * (len_I * (np.log(8*ri / len_I) - 1/2))
-    return m
+    return ri/(4*pi) * (len_I * (np.log(8*ri / len_I) - 1/2))
+
 
 def matrix_close(len_I, ri):
     '''
@@ -44,11 +44,9 @@ def matrix_close(len_I, ri):
         @param len_I: boundary element length
         @param ri: radial coordinate of i-esim dof
     '''
-    m = 1/(4*pi) * (len_I * (np.log(8*ri / len_I) - 3/2))
-    return m
+    return ri/(4*pi) * (len_I * (np.log(8*ri / len_I) - 3/2))
 
-
-def matrix_far(len_I, Gj, rj):
+def matrix_far(len_I, Gj):
     '''
         Compute the contribution of nodes far to the point source position
         for the matrix for the extraction of the Neumann data.
@@ -62,8 +60,7 @@ def matrix_far(len_I, Gj, rj):
 
         @return m: contribution of boundary element i to j-esim dof component of matrix M
     '''
-    m = 1/2 * len_I * Gj / rj
-    return m
+    return 1/2 * len_I * Gj
 
 
 def K_neighborhood_integral(len_I, source_r, psi_source, psi_neighbor):
