@@ -4,12 +4,11 @@ sys.path.append(".")
 
 from src.core.solver import GradShafranovSolver
 from firedrake import *
-from src.utils.functions.CompassU import linear_interpolation, CompassU_J
+#from src.utils.functions.CompassU import linear_interpolation, CompassU_J, CompassU_initialize
 
 #--------------------------------------------------#
 #                 PLASMA CURRENT                   #
 #--------------------------------------------------#
-'''
 # Plasma current density profile j_phi:
 def jphi(R, psi_norm):
     r0 = 6.2
@@ -43,7 +42,7 @@ def jphi(R, psiN):
     return R * pprime(psiN) + 1/(mu0*R) * FFprime(psiN)
 def jphi_derivative(R, psiN):
     return diff(jphi(R, psiN), psiN)
-
+'''
 
 #--------------------------------------------------#
 #               PF COILS CURRENTS                  #
@@ -62,15 +61,11 @@ def jphi_derivative(R, psiN):
 #--------------------------------------------------#
 params = {
     # Tokamak geometry:
-    'geometry': "CompassU", # "ITER" or "CompassU"
+    'geometry': "ITER", # "ITER" or "CompassU"
     'h': 0.05, # mesh size in the vacuum region
 
     # Currents configuration:
-    'I': [
-        -654043.86, -449965.2136, -449965.2136, -63607.206, 459332.916,
-        578029.5081, 578029.5081, 164952.4866, 164952.4866, 222340.6416,
-        50441.787, -601765.3804, -302472.6912, -487972.6832, -485041.4354
-    ],
+    'I': [-1.4e6, -9.5e6, -2.04e7, -2.04e7, -1.0e7, 3.6e6, 5.5e6, -2.3e6, -6.5e6, -4.8e6, -7.5e6, 1.73e7],
     'j_plasma': jphi,
     'j_plasma_derivative': jphi_derivative, # needed only for Newton iterations
 

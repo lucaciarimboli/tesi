@@ -2,7 +2,7 @@ from firedrake import *
 from firedrake.pyplot import triplot, tripcolor, tricontour
 from src.utils.functions import coils
 from src.utils.functions.mesh_tags import get_tags_for_plot
-from src.utils.functions.CompassU import CompassU_structures
+#from src.utils.functions.CompassU import CompassU_structures
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -53,8 +53,8 @@ class Plot:
         if geometry == "ITER":
             self.ITER_structures()
         elif geometry == "CompassU":
-            #raise NotImplementedError("COMPASS-Upgrade data cannot be available publicly.")
-            self.limiter, self.coils_list = CompassU_structures()
+            raise NotImplementedError("COMPASS-Upgrade data cannot be available publicly.")
+            #self.limiter, self.coils_list = CompassU_structures()
         else:
             raise ValueError(f"Geometry {geometry} not available.")
 
@@ -187,10 +187,10 @@ class Plot:
         ax.set_aspect("equal", adjustable="box")
 
         #------ LIMITS -------#
-        #plt.xlim(3.5, 9)
-        #plt.ylim(-5, 5.5)
-        plt.xlim(0.7, 0.8)
-        plt.ylim(-0.55, -0.45)
+        plt.xlim(3.5, 9)
+        plt.ylim(-5, 5.5)
+        #plt.xlim(0.7, 0.8)
+        #plt.ylim(-0.55, -0.45)
         #---------------------#
 
         #ax.set_xticks([])
