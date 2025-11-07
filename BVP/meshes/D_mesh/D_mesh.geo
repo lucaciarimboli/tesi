@@ -5,8 +5,7 @@ tau = 0;     // triangularity
 eps = a / R0;     // aspect ratio
 b = 1 - eps;     // elongation
 
-n = 16;		// number of discretization points
-//n = 50;
+n = 80;		// number of discretization points
 // h = 0.02;
 
 For i In {0:n-1}

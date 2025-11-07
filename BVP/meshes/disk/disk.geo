@@ -1,6 +1,6 @@
 // Parameters
 r = 1.0;      // Circle radius
-lc = 0.1;     // Characteristic length of elements
+lc = 0.08;     // Characteristic length of elements
 
 // Define the center point
 Point(1) = {0, 0, 0, lc};
@@ -30,4 +30,4 @@ Mesh.MshFileVersion = 2.2;
 Mesh.CharacteristicLengthMax = lc;
 Mesh.Smoothing = 10;
 Mesh 2;
-Save "disk_5.msh";
+Save "disk_1.msh";

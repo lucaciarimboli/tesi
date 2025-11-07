@@ -1,5 +1,5 @@
-n = 32;  // Number of discretization points
-// h = 0.1;
+n = 80;  // Number of discretization points
+// h = 0.01;
 
 // Define R limits
 R_min = 2/3 * Sqrt(3*Pi);
@@ -25,8 +25,10 @@ For i In {0:n-1}
 EndFor
 
 // Connect points into curves
-Spline(1) = {1:n}; // Upper part
-Spline(2) = {n+1:2*n}; // Lower part
+// Spline(1) = {1:n}; // Upper part
+// Spline(2) = {n+1:2*n}; // Lower part
+Curve(1) = {1:n}; // Upper part
+Curve(2) = {n+1:2*n}; // Lower part
 
 // Close the loop
 Line(3) = { n, 2*n };
@@ -44,4 +46,4 @@ Mesh.MshFileVersion = 2.2;
 Mesh.CharacteristicLengthMax = 1/n;
 Mesh.Smoothing = 10;
 Mesh 2;
-Save "elliptic_1.msh";
+Save "elliptic_4.msh";

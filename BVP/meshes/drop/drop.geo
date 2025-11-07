@@ -1,5 +1,5 @@
-h = 0.005;
-n = 32;
+// h = 0.1;
+n = 80;
 
 For i In {0:n-1}
 	t = 2*Pi*i/n; // Linearly spaced t values from 0 to 2*pi
@@ -7,8 +7,8 @@ For i In {0:n-1}
 EndFor
 
 // Connect points into a closed boundary
-Curve(1) = {1:n-1};
-Curve(2) = {n-1,1};
+Curve(1) = {1:n};
+Curve(2) = {n,1};
 Line Loop(3) = {1,2};
 Physical Curve("Boundary",1) = {1,2};   // Assign boundary
 
@@ -21,4 +21,4 @@ Mesh.MshFileVersion = 2.2;
 Mesh.CharacteristicLengthMax = 1/n;
 Mesh.Smoothing = 10;
 Mesh 2;
-Save "drop_1.msh";
+Save "drop_4.msh";
