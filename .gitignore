@@ -9,3 +9,4 @@ src/utils/functions/CompassU.py
 
 # Ignore results files:
 results/*
+!results/.gitkeep
